@@ -1,0 +1,1 @@
+ALTER TABLE "queue_items" ADD COLUMN "sub_issues" jsonb DEFAULT '[]'::jsonb NOT NULL;
