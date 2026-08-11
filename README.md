@@ -11,8 +11,9 @@ The app includes a service-free product demo at `/demo`.
 - Linear OAuth with PKCE, CSRF state validation, workspace restriction, and
   read-first/write-on-facilitation scopes
 - encrypted OAuth tokens, server-side refresh, and opaque HTTP-only sessions
-- one-click agenda creation from every unestimated Todo issue in the selected
-  team, with optional cycle and text filters
+- one-click agenda creation from unestimated Todo issues in Linear's upcoming
+  cycle, preserving the cycle's manual issue order
+- individual-ticket search and adding before or during a session
 - drag-to-reorder agenda preparation
 - a simple 16:9 room with issue Markdown, attachments, embedded Figma designs,
   sub-issues, queue progress, roster, and voting controls

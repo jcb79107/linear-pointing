@@ -3766,7 +3766,7 @@ body {
 
 .quick-add-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
   border-bottom: 1px solid var(--line);
   padding: 12px;

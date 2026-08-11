@@ -18,6 +18,11 @@ import type {
 } from "@/lib/domain";
 import { getServerEnv } from "@/lib/env";
 import {
+  findUpcomingLinearCycle,
+  sortByLinearManualOrder,
+  type UpcomingLinearCycle,
+} from "@/lib/linear-order";
+import {
   isPointableLinearIssue,
   LINEAR_TODO_STATE_TYPE,
 } from "@/lib/pointing-eligibility";
@@ -38,10 +43,7 @@ export interface IssueSearchFilters {
 }
 
 export interface LinearIssueFilterOptions {
-  activeCycleId: string | null;
-  cycles: Array<{ id: string; name: string }>;
-  projects: Array<{ id: string; name: string }>;
-  labels: Array<{ id: string; name: string }>;
+  upcomingCycle: UpcomingLinearCycle | null;
 }
 
 function parseScopes(value: string | string[]): string[] {
@@ -224,7 +226,7 @@ async function summarizeIssueForSearch(
 export async function searchLinearIssues(
   userId: string,
   filters: IssueSearchFilters,
-  options: { fetchAll?: boolean } = {},
+  options: { fetchAll?: boolean; preserveManualOrder?: boolean } = {},
 ): Promise<LinearIssueSummary[]> {
   const client = await getLinearClient(userId);
   const identifierQuery = filters.query?.trim().toUpperCase();
@@ -283,11 +285,28 @@ export async function searchLinearIssues(
     await issues.fetchNext();
   }
 
+  const orderedIssues = options.preserveManualOrder
+    ? sortByLinearManualOrder(issues.nodes)
+    : issues.nodes;
+
   return Promise.all(
-    issues.nodes.map((issue) =>
+    orderedIssues.map((issue) =>
       summarizeIssueForSearch(issue, filters.teamId),
     ),
   );
+}
+
+export async function getUpcomingLinearCycle(
+  userId: string,
+  teamId: string,
+): Promise<UpcomingLinearCycle | null> {
+  const client = await getLinearClient(userId);
+  const team = await client.team(teamId);
+  const cycles = await team.cycles({
+    first: 50,
+    filter: { isFuture: { eq: true } },
+  });
+  return findUpcomingLinearCycle(cycles.nodes);
 }
 
 export async function getLinearIssueFilterOptions(
@@ -296,25 +315,12 @@ export async function getLinearIssueFilterOptions(
 ): Promise<LinearIssueFilterOptions> {
   const client = await getLinearClient(userId);
   const team = await client.team(teamId);
-  const [cycles, projects, labels] = await Promise.all([
-    team.cycles({ first: 50 }),
-    team.projects({ first: 100 }),
-    team.labels({ first: 100 }),
-  ]);
-  const compact = <T extends { id: string; name?: string | null }>(nodes: T[]) =>
-    nodes
-      .map(({ id, name }) => ({ id, name: name ?? "Unnamed" }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+  const cycles = await team.cycles({
+    first: 50,
+    filter: { isFuture: { eq: true } },
+  });
   return {
-    activeCycleId: team.activeCycleId ?? null,
-    cycles: cycles.nodes
-      .map((cycle) => ({
-        id: cycle.id,
-        name: cycle.name ?? `Cycle ${cycle.number}`,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    projects: compact(projects.nodes),
-    labels: compact(labels.nodes),
+    upcomingCycle: findUpcomingLinearCycle(cycles.nodes),
   };
 }
 

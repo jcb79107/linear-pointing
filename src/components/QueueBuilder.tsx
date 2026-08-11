@@ -97,13 +97,12 @@ export function QueueBuilder({
   const [queue, setQueue] = useState(initialSnapshot.queue);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<LinearIssueFilterOptions | null>(null);
-  const [cycleId, setCycleId] = useState("");
   const [results, setResults] = useState<LinearIssueSummary[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hasSearched, setHasSearched] = useState(false);
   const [activePanel, setActivePanel] = useState<"find" | "queue">("find");
   const [searching, setSearching] = useState(false);
-  const [bulkAdding, setBulkAdding] = useState<"all" | "cycle" | null>(null);
+  const [bulkAdding, setBulkAdding] = useState<"upcoming" | null>(null);
   const [busy, setBusy] = useState(false);
   const [orderStatus, setOrderStatus] = useState<
     "idle" | "saving" | "saved"
@@ -125,7 +124,6 @@ export function QueueBuilder({
         const data = await response.json();
         if (active) {
           setFilters(data.filters);
-          setCycleId((current) => current || data.filters.activeCycleId || "");
         }
       })
       .catch(() => undefined);
@@ -207,23 +205,27 @@ export function QueueBuilder({
     }
   }
 
-  async function addBulkIssues(input: {
-    source: "all" | "cycle";
-    cycleId?: string;
-    sourceLabel: string;
-  }) {
-    setBulkAdding(input.source);
+  async function addUpcomingCycle() {
+    setBulkAdding("upcoming");
     setError(null);
     setNotice(null);
     try {
       const params = new URLSearchParams({
         teamId: initialSnapshot.teamId,
-        ...(input.cycleId ? { cycleId: input.cycleId } : {}),
-        all: "true",
+        upcoming: "true",
       });
       const searchResponse = await fetch(`/api/linear/issues?${params}`);
       const searchData = await searchResponse.json();
       if (!searchResponse.ok) throw new Error(searchData.error);
+      const cycleName =
+        searchData.upcomingCycle?.name ??
+        filters?.upcomingCycle?.name ??
+        "the upcoming cycle";
+
+      if (!searchData.upcomingCycle) {
+        setNotice("Linear does not have an upcoming cycle for this team yet.");
+        return;
+      }
 
       const queuedIds = new Set(queue.map((item) => item.linearIssueId));
       const issueIds = (searchData.issues as LinearIssueSummary[])
@@ -231,7 +233,7 @@ export function QueueBuilder({
         .map((issue) => issue.id);
       if (!issueIds.length) {
         setNotice(
-          `Every Todo ticket without points in ${input.sourceLabel} is already queued.`,
+          `Every unpointed Todo ticket in ${cycleName} is already queued.`,
         );
         return;
       }
@@ -253,15 +255,15 @@ export function QueueBuilder({
       await refreshSnapshot();
       setActivePanel("queue");
       setNotice(
-        `Added ${issueIds.length} Todo ${
+        `Added ${issueIds.length} unpointed Todo ${
           issueIds.length === 1 ? "ticket" : "tickets"
-        } from ${input.sourceLabel}.`,
+        } from ${cycleName} in Linear's manual order.`,
       );
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : `Could not add tickets from ${input.sourceLabel}`,
+          : "Could not add tickets from the upcoming cycle",
       );
     } finally {
       setBulkAdding(null);
@@ -358,9 +360,6 @@ export function QueueBuilder({
     setNotice(null);
   }
 
-  const selectedCycle = filters?.cycles.find(
-    (cycle) => cycle.id === cycleId,
-  );
   const normalizedQuery = query.trim().toLowerCase();
   const queuedMatch = normalizedQuery
     ? queue.find(
@@ -457,7 +456,8 @@ export function QueueBuilder({
             <p className="step-label">BUILD THE AGENDA</p>
             <h1>What should the team point?</h1>
             <p className="prepare-help">
-              Add every unpointed Todo ticket, narrow to a cycle, or search.
+              Start with the upcoming cycle, then add or remove individual
+              tickets.
             </p>
           </div>
           <div className="queue-stat">
@@ -503,7 +503,7 @@ export function QueueBuilder({
                 </span>
                 <div>
                   <b>Add tickets</b>
-                  <small>Backlog tickets are excluded automatically</small>
+                  <small>Upcoming cycle · Todo · Unpointed</small>
                 </div>
               </div>
               {selected.size > 0 && (
@@ -519,67 +519,38 @@ export function QueueBuilder({
             </div>
             <div className="quick-add-grid">
               <section className="quick-add-card">
-                <span className="quick-add-eyebrow">OPTION 1</span>
-                <b>Add everything to point</b>
-                <p>Every unpointed Todo ticket across the team.</p>
+                <span className="quick-add-eyebrow">RECOMMENDED</span>
+                <b>Add the upcoming cycle</b>
+                <p>
+                  Pull in every unpointed Todo ticket exactly as it is ordered
+                  in Linear.
+                </p>
                 <div className="backlog-source">
-                  <span>Todo</span>
-                  <small>Unpointed only</small>
+                  <span>
+                    {filters?.upcomingCycle?.name ??
+                      (filters ? "No upcoming cycle" : "Finding next cycle…")}
+                  </span>
+                  <small>Linear order</small>
                 </div>
                 <button
                   className="button button-primary"
-                  disabled={Boolean(bulkAdding) || busy}
-                  onClick={() =>
-                    void addBulkIssues({
-                      source: "all",
-                      sourceLabel: "Todo",
-                    })
+                  disabled={
+                    !filters?.upcomingCycle || Boolean(bulkAdding) || busy
                   }
+                  onClick={() => void addUpcomingCycle()}
                   type="button"
                 >
                   <CirclePlus size={15} />
-                  {bulkAdding === "all"
-                    ? "Adding tickets…"
-                    : "Add all Todo tickets"}
-                </button>
-              </section>
-              <section className="quick-add-card">
-                <span className="quick-add-eyebrow">OPTION 2</span>
-                <b>Add one cycle</b>
-                <p>Only unpointed Todo tickets from the selected cycle.</p>
-                <FilterSelect
-                  disabled={!filters}
-                  label={filters ? "Choose a cycle" : "Loading cycles…"}
-                  onChange={(value) => {
-                    setCycleId(value);
-                    setSelected(new Set());
-                  }}
-                  options={filters?.cycles ?? []}
-                  value={cycleId}
-                />
-                <button
-                  className="button button-primary"
-                  disabled={!cycleId || Boolean(bulkAdding) || busy}
-                  onClick={() =>
-                    void addBulkIssues({
-                      source: "cycle",
-                      cycleId,
-                      sourceLabel: selectedCycle?.name ?? "the cycle",
-                    })
-                  }
-                  type="button"
-                >
-                  <CirclePlus size={15} />
-                  {bulkAdding === "cycle"
-                    ? "Adding cycle…"
-                    : selectedCycle
-                      ? `Add ${selectedCycle.name}`
-                      : "Add cycle"}
+                  {bulkAdding === "upcoming"
+                    ? "Adding in Linear order…"
+                    : filters?.upcomingCycle
+                      ? `Add ${filters.upcomingCycle.name}`
+                      : "No upcoming cycle"}
                 </button>
               </section>
             </div>
             <div className="manual-picker-label">
-              <span>OPTION 3 · ADD INDIVIDUAL TICKETS</span>
+              <span>ADD INDIVIDUAL TICKETS</span>
               {query && (
                 <button onClick={clearSearch} type="button">
                   Clear search
@@ -807,35 +778,5 @@ export function QueueBuilder({
         title="Delete this draft session?"
       />
     </main>
-  );
-}
-
-function FilterSelect({
-  disabled = false,
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  disabled?: boolean;
-  label: string;
-  onChange: (value: string) => void;
-  options: Array<{ id: string; name: string }>;
-  value: string;
-}) {
-  return (
-    <select
-      aria-label={label}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value)}
-      value={value}
-    >
-      <option value="">{label}</option>
-      {options.map((option) => (
-        <option key={option.id} value={option.id}>
-          {option.name}
-        </option>
-      ))}
-    </select>
   );
 }
