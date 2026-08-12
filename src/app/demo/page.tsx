@@ -107,7 +107,7 @@ const demoSnapshot: SessionSnapshot = {
       avatarUrl: null,
       role: "voter",
       online: true,
-      hasVoted: true,
+      hasVoted: false,
       vote: null,
     },
     {
@@ -127,7 +127,7 @@ const demoSnapshot: SessionSnapshot = {
       avatarUrl: null,
       role: "voter",
       online: true,
-      hasVoted: true,
+      hasVoted: false,
       vote: null,
     },
     {

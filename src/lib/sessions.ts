@@ -31,7 +31,6 @@ import type {
   VoteValue,
 } from "@/lib/domain";
 import { isFinalizableEstimate, POINTING_CARDS } from "@/lib/estimates";
-import { isDefaultFacilitatorEmail } from "@/lib/facilitators";
 import {
   getLinearIssue,
   updateLinearIssueEstimate,
@@ -51,8 +50,9 @@ import { broadcastSessionChanged } from "@/lib/realtime";
 import {
   canFacilitate,
   nextPendingItemId,
-  publicVoteValue,
+  shouldAddNewVoterToRound,
   shouldAutoReveal,
+  voteValueForViewer,
 } from "@/lib/rounds";
 
 function sessionCode(): string {
@@ -491,34 +491,62 @@ export async function joinPokerSession(
     throw new Error("FORBIDDEN");
   }
 
-  const [activeRound] = await db
-    .select({ id: rounds.id })
-    .from(rounds)
-    .where(
-      and(
-        eq(rounds.sessionId, session.id),
-        inArray(rounds.status, ["voting", "revealed"]),
-      ),
-    )
-    .orderBy(desc(rounds.createdAt))
-    .limit(1);
+  const joinedAsNewVoter = await db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(participants)
+      .values({
+        sessionId: session.id,
+        userId: user.id,
+        role: "voter",
+      })
+      .onConflictDoNothing()
+      .returning({ userId: participants.userId });
 
-  await db
-    .insert(participants)
-    .values({
-      sessionId: session.id,
-      userId: user.id,
-      role: isDefaultFacilitatorEmail(user.email)
-        ? "facilitator"
-        : activeRound
-          ? "observer"
-          : "voter",
-    })
-    .onConflictDoUpdate({
-      target: [participants.sessionId, participants.userId],
-      set: { updatedAt: new Date() },
-    });
-  await audit(session.id, user.id, "participant.joined");
+    if (!inserted.length) {
+      await tx
+        .update(participants)
+        .set({ updatedAt: new Date() })
+        .where(
+          and(
+            eq(participants.sessionId, session.id),
+            eq(participants.userId, user.id),
+          ),
+        );
+      return false;
+    }
+
+    const [activeRound] = await tx
+      .select({ id: rounds.id, status: rounds.status })
+      .from(rounds)
+      .where(
+        and(
+          eq(rounds.sessionId, session.id),
+          inArray(rounds.status, ["voting", "revealed"]),
+        ),
+      )
+      .orderBy(desc(rounds.createdAt))
+      .limit(1);
+    if (activeRound) {
+      await tx.execute(
+        sql`select id from rounds where id = ${activeRound.id} for update`,
+      );
+      const [lockedRound] = await tx
+        .select({ status: rounds.status })
+        .from(rounds)
+        .where(eq(rounds.id, activeRound.id))
+        .limit(1);
+      if (lockedRound && shouldAddNewVoterToRound(lockedRound.status)) {
+        await tx
+          .insert(roundVoters)
+          .values({ roundId: activeRound.id, userId: user.id })
+          .onConflictDoNothing();
+      }
+    }
+    return true;
+  });
+  await audit(session.id, user.id, "participant.joined", {
+    defaultRole: joinedAsNewVoter ? "voter" : "existing",
+  });
   await broadcastSessionChanged(session.id, "participant-joined");
   return session;
 }
@@ -666,7 +694,12 @@ export async function getSessionSnapshot(
         vote:
           rawVote === null || !activeRound
             ? null
-            : publicVoteValue(activeRound.status, rawVote),
+            : voteValueForViewer(
+                activeRound.status,
+                userId,
+                member.id,
+                rawVote,
+              ),
       };
     }),
     round: activeRound
@@ -680,6 +713,57 @@ export async function getSessionSnapshot(
         }
       : null,
   };
+}
+
+export async function refreshActiveIssuePreview(
+  sessionId: string,
+  userId: string,
+) {
+  const { session } = await requireMembership(sessionId, userId);
+  if (!session.activeQueueItemId) throw new Error("No active issue");
+  const [item] = await db
+    .select()
+    .from(queueItems)
+    .where(
+      and(
+        eq(queueItems.id, session.activeQueueItemId),
+        eq(queueItems.sessionId, sessionId),
+      ),
+    )
+    .limit(1);
+  if (!item) throw new Error("Active issue not found");
+
+  const refreshed = await getLinearIssue(userId, item.linearIssueId);
+  if (refreshed.teamId !== session.teamId) {
+    throw new Error("The Linear issue no longer belongs to this team");
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .update(queueItems)
+      .set({
+        identifier: refreshed.identifier,
+        title: refreshed.title,
+        description: refreshed.description,
+        url: refreshed.url,
+        priorityLabel: refreshed.priorityLabel,
+        stateName: refreshed.stateName,
+        assigneeName: refreshed.assigneeName,
+        projectName: refreshed.projectName,
+        labels: refreshed.labels,
+        subIssues: refreshed.subIssues,
+        attachments: refreshed.attachments,
+        currentEstimate: refreshed.estimate,
+        updatedAt: new Date(),
+      })
+      .where(eq(queueItems.id, item.id));
+    await tx.insert(auditEvents).values({
+      sessionId,
+      actorUserId: userId,
+      eventType: "linear.preview_refreshed",
+      metadata: { queueItemId: item.id, identifier: item.identifier },
+    });
+  });
+  await broadcastSessionChanged(sessionId, "linear-preview-refreshed");
 }
 
 export async function castVote(input: {

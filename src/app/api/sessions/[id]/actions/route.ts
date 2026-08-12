@@ -5,6 +5,8 @@ import { apiError, assertSameOrigin } from "@/lib/http";
 import {
   activateQueueItem,
   finalizeEstimate,
+  getSessionSnapshot,
+  refreshActiveIssuePreview,
   revealRound,
   revoteRound,
   setParticipantRole,
@@ -15,6 +17,7 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reveal") }),
   z.object({ action: z.literal("revote") }),
   z.object({ action: z.literal("skip") }),
+  z.object({ action: z.literal("refresh-issue") }),
   z.object({
     action: z.literal("activate"),
     queueItemId: z.string().uuid(),
@@ -53,6 +56,9 @@ export async function POST(
       case "skip":
         await skipActiveItem(id, user.id);
         break;
+      case "refresh-issue":
+        await refreshActiveIssuePreview(id, user.id);
+        break;
       case "activate":
         await activateQueueItem({
           sessionId: id,
@@ -78,7 +84,10 @@ export async function POST(
         });
         break;
     }
-    return Response.json({ success: true });
+    return Response.json({
+      success: true,
+      snapshot: await getSessionSnapshot(id, user.id),
+    });
   } catch (error) {
     return apiError(error);
   }

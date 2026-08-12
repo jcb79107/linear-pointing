@@ -6,7 +6,9 @@ import {
   majorityVote,
   nextPendingItemId,
   publicVoteValue,
+  shouldAddNewVoterToRound,
   shouldAutoReveal,
+  voteValueForViewer,
 } from "@/lib/rounds";
 
 describe("round behavior", () => {
@@ -20,6 +22,18 @@ describe("round behavior", () => {
     expect(publicVoteValue("voting", 8)).toBeNull();
     expect(publicVoteValue("revealed", 8)).toBe(8);
     expect(publicVoteValue("finalized", 4)).toBe(4);
+  });
+
+  it("shows voters their own replaceable vote without exposing it to teammates", () => {
+    expect(voteValueForViewer("voting", "me", "me", 3)).toBe(3);
+    expect(voteValueForViewer("voting", "teammate", "me", 3)).toBeNull();
+    expect(voteValueForViewer("revealed", "teammate", "me", 3)).toBe(3);
+  });
+
+  it("adds a new voter to a round only while voting is open", () => {
+    expect(shouldAddNewVoterToRound("voting")).toBe(true);
+    expect(shouldAddNewVoterToRound("revealed")).toBe(false);
+    expect(shouldAddNewVoterToRound("finalized")).toBe(false);
   });
 
   it("enforces voter snapshots and facilitator permissions", () => {

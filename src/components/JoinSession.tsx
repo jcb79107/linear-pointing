@@ -1,30 +1,44 @@
 "use client";
 
-import { ArrowRight, LoaderCircle } from "lucide-react";
+import { ArrowRight, LoaderCircle, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+
+import { requestJson } from "@/lib/client-request";
 
 export function JoinSession({ code }: { code: string }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     async function join() {
-      const response = await fetch(`/api/s/${code}/join`, { method: "POST" });
-      const data = await response.json();
-      if (cancelled) return;
-      if (!response.ok) {
-        setError(data.error ?? "Could not join this session");
-        return;
+      try {
+        const { data, response } = await requestJson<{
+          error?: string;
+          sessionId?: string;
+        }>(`/api/s/${code}/join`, { method: "POST" });
+        if (cancelled) return;
+        if (!response.ok || !data.sessionId) {
+          setError(data.error ?? "Could not join this session");
+          return;
+        }
+        router.replace(`/sessions/${data.sessionId}`);
+      } catch (caught) {
+        if (cancelled) return;
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not join this session",
+        );
       }
-      router.replace(`/sessions/${data.sessionId}`);
     }
     void join();
     return () => {
       cancelled = true;
     };
-  }, [code, router]);
+  }, [attempt, code, router]);
 
   return (
     <main className="auth-shell">
@@ -34,6 +48,16 @@ export function JoinSession({ code }: { code: string }) {
             <span className="join-icon error">!</span>
             <h1>Couldn’t enter the room.</h1>
             <p>{error}</p>
+            <button
+              className="button button-primary"
+              onClick={() => {
+                setError(null);
+                setAttempt((current) => current + 1);
+              }}
+              type="button"
+            >
+              <RotateCcw size={16} /> Try again
+            </button>
             <a className="button button-dark" href="/app">
               Back to sessions <ArrowRight size={16} />
             </a>

@@ -12,6 +12,8 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  LoaderCircle,
+  RefreshCw,
   RotateCcw,
   Search,
   Send,
@@ -22,13 +24,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { Brand } from "@/components/Brand";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { requestJson } from "@/lib/client-request";
 import type {
   LinearIssueSummary,
   ParticipantRole,
@@ -49,6 +52,11 @@ interface LiveRoomProps {
   initialSnapshot: SessionSnapshot;
   demoMode?: boolean;
   slackInviteChannel?: string;
+}
+
+interface RoomApiResponse {
+  error?: string;
+  snapshot?: SessionSnapshot;
 }
 
 function initials(name: string) {
@@ -93,7 +101,7 @@ function localVote(
       ? revealedParticipants
       : participants.map((person) => ({
           ...person,
-          vote: null,
+          vote: person.id === userId ? person.vote : null,
         })),
     round: snapshot.round
       ? {
@@ -105,6 +113,21 @@ function localVote(
   };
 }
 
+function optimisticVote(
+  snapshot: SessionSnapshot,
+  userId: string,
+  value: VoteValue,
+): SessionSnapshot {
+  return {
+    ...snapshot,
+    participants: snapshot.participants.map((person) =>
+      person.id === userId
+        ? { ...person, hasVoted: true, vote: value }
+        : person,
+    ),
+  };
+}
+
 export function LiveRoom({
   initialSnapshot,
   demoMode = false,
@@ -113,7 +136,13 @@ export function LiveRoom({
   const router = useRouter();
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [busy, setBusy] = useState(false);
+  const [voteBusy, setVoteBusy] = useState(false);
+  const [refreshingIssue, setRefreshingIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewNotice, setPreviewNotice] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<
+    "connected" | "reconnecting" | "offline"
+  >("connected");
   const [copied, setCopied] = useState(false);
   const [slackBusy, setSlackBusy] = useState(false);
   const [slackSent, setSlackSent] = useState(false);
@@ -145,62 +174,99 @@ export function LiveRoom({
         .map((person) => person.id),
     ),
   );
+  const refreshInFlight = useRef<Promise<boolean> | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (demoMode) return;
-    const response = await fetch(
-      `/api/sessions/${initialSnapshot.id}/snapshot`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) return;
-    const data = await response.json();
-    setSnapshot(data.snapshot);
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (demoMode) return true;
+    if (refreshInFlight.current) return refreshInFlight.current;
+
+    const request = (async () => {
+      try {
+        const { data, response } = await requestJson<RoomApiResponse>(
+          `/api/sessions/${initialSnapshot.id}/snapshot`,
+          { cache: "no-store" },
+          8_000,
+        );
+        if (!response.ok || !data.snapshot) {
+          throw new Error(data.error ?? "Could not refresh the room");
+        }
+        setSnapshot(data.snapshot);
+        setSyncState("connected");
+        return true;
+      } catch {
+        setSyncState(navigator.onLine ? "reconnecting" : "offline");
+        return false;
+      } finally {
+        refreshInFlight.current = null;
+      }
+    })();
+    refreshInFlight.current = request;
+    return request;
   }, [demoMode, initialSnapshot.id]);
 
   useEffect(() => {
     if (demoMode) return;
-    const timer = window.setInterval(() => void refresh(), 10_000);
+    const timer = window.setInterval(() => void refresh(), 5_000);
+    const recover = () => {
+      setSyncState(navigator.onLine ? "reconnecting" : "offline");
+      if (navigator.onLine) void refresh();
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("online", recover);
+    window.addEventListener("offline", recover);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
     const key = process.env.NEXT_PUBLIC_PUSHER_KEY;
     const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
-    if (!key || !cluster) return () => window.clearInterval(timer);
+    let pusher: Pusher | null = null;
 
-    const pusher = new Pusher(key, {
-      cluster,
-      channelAuthorization: {
-        endpoint: "/api/pusher/auth",
-        transport: "ajax",
-      },
-    });
-    const channel = pusher.subscribe(
-      `presence-session-${initialSnapshot.id}`,
-    );
-    channel.bind("session-changed", () => void refresh());
-    channel.bind("pusher:subscription_succeeded", (members: {
-      each: (callback: (member: { id: string }) => void) => void;
-    }) => {
-      const next = new Set<string>();
-      members.each((member) => next.add(member.id));
-      setOnlineIds(next);
-    });
-    channel.bind(
-      "pusher:member_added",
-      (member: { id: string }) =>
-        setOnlineIds((current) => new Set(current).add(member.id)),
-    );
-    channel.bind(
-      "pusher:member_removed",
-      (member: { id: string }) =>
-        setOnlineIds((current) => {
-          const next = new Set(current);
-          next.delete(member.id);
-          return next;
-        }),
-    );
+    if (key && cluster) {
+      pusher = new Pusher(key, {
+        cluster,
+        channelAuthorization: {
+          endpoint: "/api/pusher/auth",
+          transport: "ajax",
+        },
+      });
+      pusher.connection.bind("connected", () => void refresh());
+      const channel = pusher.subscribe(
+        `presence-session-${initialSnapshot.id}`,
+      );
+      channel.bind("session-changed", () => void refresh());
+      channel.bind("pusher:subscription_succeeded", (members: {
+        each: (callback: (member: { id: string }) => void) => void;
+      }) => {
+        const next = new Set<string>();
+        members.each((member) => next.add(member.id));
+        setOnlineIds(next);
+      });
+      channel.bind(
+        "pusher:member_added",
+        (member: { id: string }) =>
+          setOnlineIds((current) => new Set(current).add(member.id)),
+      );
+      channel.bind(
+        "pusher:member_removed",
+        (member: { id: string }) =>
+          setOnlineIds((current) => {
+            const next = new Set(current);
+            next.delete(member.id);
+            return next;
+          }),
+      );
+    }
 
     return () => {
       window.clearInterval(timer);
-      pusher.unsubscribe(`presence-session-${initialSnapshot.id}`);
-      pusher.disconnect();
+      window.removeEventListener("online", recover);
+      window.removeEventListener("offline", recover);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      pusher?.unsubscribe(`presence-session-${initialSnapshot.id}`);
+      pusher?.disconnect();
     };
   }, [demoMode, initialSnapshot.id, refresh]);
 
@@ -290,16 +356,32 @@ export function LiveRoom({
       );
       return;
     }
-    setBusy(true);
-    const response = await fetch(`/api/sessions/${snapshot.id}/vote`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value }),
-    });
-    const data = await response.json();
-    if (!response.ok) setError(data.error);
-    await refresh();
-    setBusy(false);
+    setVoteBusy(true);
+    setSnapshot((current) =>
+      optimisticVote(current, current.currentUserId, value),
+    );
+    try {
+      const { data, response } = await requestJson<RoomApiResponse>(
+        `/api/sessions/${snapshot.id}/vote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ value }),
+        },
+      );
+      if (!response.ok || !data.snapshot) {
+        throw new Error(data.error ?? "Could not submit your vote");
+      }
+      setSnapshot(data.snapshot);
+      setSyncState("connected");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not submit your vote",
+      );
+      await refresh();
+    } finally {
+      setVoteBusy(false);
+    }
   }
 
   function demoAction(
@@ -460,27 +542,85 @@ export function LiveRoom({
       return;
     }
     setBusy(true);
-    const response = await fetch(`/api/sessions/${snapshot.id}/actions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: actionName,
-        ...payload,
-        ...(overwrite ? { overwrite: true } : {}),
-      }),
-    });
-    const data = await response.json();
-    if (response.status === 409) {
-      const confirmed = window.confirm(`${data.error}\n\nOverwrite it?`);
-      if (confirmed) {
-        setBusy(false);
-        return action(actionName, payload, true);
+    try {
+      let shouldOverwrite = overwrite;
+      while (true) {
+        const { data, response } = await requestJson<RoomApiResponse>(
+          `/api/sessions/${snapshot.id}/actions`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: actionName,
+              ...payload,
+              ...(shouldOverwrite ? { overwrite: true } : {}),
+            }),
+          },
+        );
+        if (response.status === 409 && !shouldOverwrite) {
+          const confirmed = window.confirm(
+            `${data.error ?? "Linear changed"}\n\nOverwrite it?`,
+          );
+          if (!confirmed) return;
+          shouldOverwrite = true;
+          continue;
+        }
+        if (!response.ok) {
+          throw new Error(data.error ?? "Could not update the session");
+        }
+        if (data.snapshot) {
+          setSnapshot(data.snapshot);
+          setSyncState("connected");
+        } else {
+          await refresh();
+        }
+        break;
       }
-    } else if (!response.ok) {
-      setError(data.error);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not update the session",
+      );
+    } finally {
+      setBusy(false);
     }
-    await refresh();
-    setBusy(false);
+  }
+
+  async function refreshLinearPreview() {
+    if (demoMode) {
+      setPreviewNotice("Demo ticket preview refreshed.");
+      window.setTimeout(() => setPreviewNotice(null), 2200);
+      return;
+    }
+    setRefreshingIssue(true);
+    setError(null);
+    setPreviewNotice(null);
+    try {
+      const { data, response } = await requestJson<RoomApiResponse>(
+        `/api/sessions/${snapshot.id}/actions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "refresh-issue" }),
+        },
+      );
+      if (!response.ok || !data.snapshot) {
+        throw new Error(data.error ?? "Could not refresh from Linear");
+      }
+      setSnapshot(data.snapshot);
+      setSyncState("connected");
+      setPreviewNotice("Ticket preview refreshed from Linear.");
+      window.setTimeout(() => setPreviewNotice(null), 2200);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not refresh from Linear",
+      );
+    } finally {
+      setRefreshingIssue(false);
+    }
   }
 
   async function copyInvite() {
@@ -522,17 +662,26 @@ export function LiveRoom({
   async function deleteSession() {
     if (demoMode) return;
     setBusy(true);
-    const response = await fetch(`/api/sessions/${snapshot.id}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      const data = await response.json();
-      setError(data.error ?? "Could not delete this session");
+    setError(null);
+    try {
+      const { data, response } = await requestJson<{ error?: string }>(
+        `/api/sessions/${snapshot.id}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        throw new Error(data.error ?? "Could not delete this session");
+      }
+      setConfirmTarget(null);
+      router.push("/app");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not delete this session",
+      );
+    } finally {
       setBusy(false);
-      return;
     }
-    setConfirmTarget(null);
-    router.push("/app");
   }
 
   async function searchAdditionalIssues(searchQuery = addIssueQuery) {
@@ -703,6 +852,20 @@ export function LiveRoom({
       </header>
 
       {error && <div className="room-error">{error}</div>}
+      {previewNotice && <div className="room-notice">{previewNotice}</div>}
+      {syncState !== "connected" && (
+        <div className="room-sync-status" role="status">
+          <LoaderCircle className={syncState === "reconnecting" ? "spin" : ""} size={14} />
+          <span>
+            {syncState === "offline"
+              ? "You’re offline. The room will catch up automatically."
+              : "Reconnecting to the room…"}
+          </span>
+          <button onClick={() => void refresh()} type="button">
+            Retry now
+          </button>
+        </div>
+      )}
 
       {slackConfirmOpen && (
         <div
@@ -993,12 +1156,32 @@ export function LiveRoom({
                   <span>{activeItem.priorityLabel ?? "No priority"}</span>
                   <i />
                   <span>{activeItem.stateName ?? "No status"}</span>
-                  <a href={activeItem.url} target="_blank" rel="noreferrer">
-                    Open in Linear <ExternalLink size={13} />
-                  </a>
+                  <div className="issue-source-actions">
+                    <button
+                      aria-label="Refresh ticket preview from Linear"
+                      disabled={refreshingIssue}
+                      onClick={() => void refreshLinearPreview()}
+                      title="Refresh title, description, project, designs, and metadata from Linear"
+                      type="button"
+                    >
+                      <RefreshCw
+                        className={refreshingIssue ? "spin" : ""}
+                        size={13}
+                      />
+                      {refreshingIssue ? "Refreshing…" : "Refresh"}
+                    </button>
+                    <a href={activeItem.url} target="_blank" rel="noreferrer">
+                      Open in Linear <ExternalLink size={13} />
+                    </a>
+                  </div>
                 </div>
                 <h1>{activeItem.title}</h1>
                 <div className="issue-tags">
+                  {activeItem.projectName && (
+                    <span className="issue-project-tag">
+                      Project · {activeItem.projectName}
+                    </span>
+                  )}
                   {activeItem.labels.map((label) => (
                     <span key={label}>{label}</span>
                   ))}
@@ -1142,12 +1325,12 @@ export function LiveRoom({
                       <button
                         className={
                           me?.hasVoted &&
-                          revealed &&
                           me.vote === card.value
                             ? "selected"
                             : ""
                         }
-                        disabled={!canVote || busy}
+                        aria-pressed={me?.hasVoted && me.vote === card.value}
+                        disabled={!canVote || voteBusy}
                         key={card.value}
                         onClick={() => void vote(card.value)}
                         type="button"

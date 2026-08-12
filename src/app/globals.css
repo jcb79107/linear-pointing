@@ -1940,6 +1940,49 @@ code {
   transform: translateX(-50%);
 }
 
+.room-notice {
+  position: fixed;
+  z-index: 31;
+  top: 78px;
+  left: 50%;
+  border: 1px solid #287451;
+  border-radius: 9px;
+  padding: 10px 15px;
+  background: #163d2e;
+  color: #d1fae5;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  font-size: 11px;
+  transform: translateX(-50%);
+}
+
+.room-sync-status {
+  position: fixed;
+  z-index: 29;
+  top: 78px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #6f5b31;
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: #352d1d;
+  color: #fde68a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+}
+
+.room-sync-status button {
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 0 0 0 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .room-grid {
   display: grid;
   min-height: calc(100vh - 68px);
@@ -2188,6 +2231,44 @@ code {
   text-transform: none;
 }
 
+.issue-source-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+
+.issue-source-actions a {
+  margin-left: 0;
+}
+
+.issue-source-actions button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #a8b3bc;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.issue-source-actions button:hover:not(:disabled) {
+  border-color: var(--orange);
+  color: white;
+}
+
+.issue-source-actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .room-issue h1 {
   max-width: 850px;
   margin: 25px 0 15px;
@@ -2211,6 +2292,12 @@ code {
   color: #a6b0b9;
   font-size: 8px;
   font-weight: 700;
+}
+
+.issue-tags .issue-project-tag {
+  border-color: color-mix(in srgb, var(--orange) 45%, transparent);
+  background: color-mix(in srgb, var(--orange) 12%, transparent);
+  color: #dbeafe;
 }
 
 .issue-description {
@@ -4057,6 +4144,37 @@ body {
   .issue-meta-row a {
     margin-left: auto;
     font-size: 10px;
+  }
+
+  .issue-source-actions {
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .issue-source-actions a {
+    margin-left: 0;
+  }
+
+  .issue-source-actions button {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .room-error,
+  .room-notice {
+    top: 62px;
+    width: calc(100% - 24px);
+    max-width: 520px;
+    text-align: center;
+  }
+
+  .room-sync-status {
+    top: 62px;
+    right: 12px;
+    left: 12px;
+    justify-content: center;
   }
 
   .room-issue h1 {

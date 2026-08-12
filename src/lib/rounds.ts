@@ -67,3 +67,18 @@ export function publicVoteValue<T>(
     ? voteValue
     : null;
 }
+
+export function voteValueForViewer<T>(
+  roundStatus: RoundStatus,
+  viewerUserId: string,
+  voterUserId: string,
+  voteValue: T,
+): T | null {
+  return viewerUserId === voterUserId
+    ? voteValue
+    : publicVoteValue(roundStatus, voteValue);
+}
+
+export function shouldAddNewVoterToRound(status: RoundStatus): boolean {
+  return status === "voting";
+}
