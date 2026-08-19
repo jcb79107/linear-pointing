@@ -1,24 +1,31 @@
 # Linear Pointing
 
-Linear-native planning poker for a single Linear workspace. A facilitator
-builds an ordered issue queue, shares one persistent room link, runs private
-votes, and writes the agreed estimate back to Linear without switching tabs.
+Linear-native planning poker for any Linear workspace. A facilitator builds an
+ordered issue queue, shares one persistent room link, runs private votes, and
+writes the agreed estimate back to Linear without switching tabs.
 
 The app includes a service-free product demo at `/demo`.
+The product decisions behind the configurable workflow are documented in
+[`docs/product-research.md`](docs/product-research.md).
 
 ## What is implemented
 
-- Linear OAuth with PKCE, CSRF state validation, workspace restriction, and
-  read-first/write-on-facilitation scopes
+- public Linear OAuth with PKCE, CSRF state validation, and read-first / optional
+  write scopes; there is no workspace allowlist
 - encrypted OAuth tokens, server-side refresh, and opaque HTTP-only sessions
-- one-click agenda creation from unestimated Todo issues in Linear's upcoming
-  cycle, preserving the cycle's manual issue order
+- personal settings for pointing decks, auto-reveal, ticket intake, and agenda
+  ordering defaults
+- ticket intake by active/upcoming/any cycle; Backlog, Todo, and In Progress
+  status; estimate state; and assignee scope
+- one-click agenda creation from matching Linear issues
 - individual-ticket search and adding before or during a session
-- drag-to-reorder agenda preparation
+- Linear, priority, age, recency, identifier, title, and custom multi-rule sort
+  presets, plus drag-to-reorder agenda preparation
 - a simple 16:9 room with issue Markdown, attachments, embedded Figma designs,
   sub-issues, queue progress, roster, and voting controls
-- one exact `0, 1, 2, 3, 4` scale for voting and Linear write-back
-- secret replaceable votes, automatic/early reveal, observers,
+- every native Linear estimate scale plus compatible Linear, Fibonacci,
+  powers-of-two, and custom numeric decks
+- secret replaceable votes, configurable automatic reveal, early reveal, observers,
   absences, late joins, revotes, skips, and issue revisit
 - conflict detection before Linear estimate overwrite
 - PostgreSQL-authoritative recovery and Pusher presence notifications that
@@ -39,7 +46,8 @@ and a change reason; clients refetch an authorization-filtered snapshot. A
 
 ## Local setup
 
-1. Create a Linear OAuth application. Use this callback:
+1. Open `/setup` and use the pre-filled Linear OAuth application form. Keep the
+   distribution set to **Public** and use this callback:
 
    `http://localhost:3000/api/auth/linear/callback`
 
@@ -55,20 +63,15 @@ npm run db:migrate
 npm run dev
 ```
 
-`ALLOWED_LINEAR_ORG_KEY` is the workspace key from
-`linear.app/<workspace-key>` for the one permitted workspace. Pusher variables
-may be omitted during early local development; the
-room will use polling, but production should configure them.
+Pusher variables may be omitted during early local development; the room will
+use polling, but production should configure them. To enable the Slack invite
+button, configure an incoming webhook in `SLACK_INVITE_WEBHOOK_URL`;
+`SLACK_INVITE_CHANNEL` is the label shown in the confirmation dialog.
 
-`FACILITATOR_EMAILS` is a comma-separated list of users who may create sessions
-by default. Other workspace members join as voters and can be promoted during a
-session. To enable the Slack invite button, configure an incoming webhook in
-`SLACK_INVITE_WEBHOOK_URL`; `SLACK_INVITE_CHANNEL` is the channel label shown in
-the confirmation dialog.
-
-Only teams configured with Linear's **Linear** estimate scale and **Allow zero
-estimates** enabled appear in the team picker. This guarantees every `0`–`4`
-vote can be written back without conversion.
+All Linear teams with estimates enabled appear in the team picker. The default
+deck mirrors the selected team's exact scale. Custom decks are intentionally
+validated against that scale so every card can be written back without a lossy
+or surprising conversion.
 
 ## Verification
 
@@ -79,7 +82,8 @@ npm test
 npm run build
 ```
 
-The unit suite covers the exact pointing scale, finalizable votes,
+The unit suite covers pointing-scale compatibility, custom agenda sorting,
+finalizable votes,
 snapshotted voter reveal rules, vote secrecy, permissions, queue progression,
 and OAuth PKCE/state behavior.
 

@@ -6,13 +6,27 @@ import { Brand } from "@/components/Brand";
 const variables = [
   "DATABASE_URL",
   "LINEAR_CLIENT_ID",
-  "ALLOWED_LINEAR_ORG_KEY",
   "TOKEN_ENCRYPTION_KEY",
   "PUSHER_APP_ID / KEY / SECRET / CLUSTER",
   "SLACK_INVITE_WEBHOOK_URL (optional)",
 ];
 
 export default function SetupPage() {
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const linearSetupUrl = new URL(
+    "https://linear.app/settings/api/applications/new",
+  );
+  linearSetupUrl.searchParams.set("distribution", "public");
+  linearSetupUrl.searchParams.set("display.description", "Planning poker that imports issues and writes estimates back to Linear.");
+  linearSetupUrl.searchParams.set("developer.name", "Pointline");
+  linearSetupUrl.searchParams.set("oauth.client_name", "Pointline Poker");
+  linearSetupUrl.searchParams.set("oauth.client_uri", appUrl);
+  linearSetupUrl.searchParams.append(
+    "oauth.redirect_uris",
+    `${appUrl.replace(/\/$/, "")}/api/auth/linear/callback`,
+  );
+  linearSetupUrl.searchParams.append("oauth.grant_types", "authorization_code");
+
   return (
     <main className="setup-shell">
       <header className="simple-header">
@@ -34,16 +48,15 @@ export default function SetupPage() {
             <div>
               <b>Create a Linear OAuth app</b>
               <p>
-                Set the callback to{" "}
-                <code>/api/auth/linear/callback</code>. No admin scope is
-                required.
+                Use the pre-filled public app form so members of any Linear
+                workspace can connect. No admin scope is required.
               </p>
               <a
-                href="https://linear.app/settings/api/applications/new"
+                href={linearSetupUrl.toString()}
                 target="_blank"
                 rel="noreferrer"
               >
-                Open Linear settings <ExternalLink size={14} />
+                Create the Linear app <ExternalLink size={14} />
               </a>
             </div>
           </li>

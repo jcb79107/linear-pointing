@@ -18,10 +18,12 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowDownAZ,
   Check,
   CirclePlus,
   GripVertical,
   Search,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -32,20 +34,27 @@ import { useEffect, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type {
+  EstimateCard,
   LinearIssueSummary,
+  QueueSortPreset,
   SessionQueueItem,
   SessionSnapshot,
+  UserSettings,
 } from "@/lib/domain";
+import { voteLabel } from "@/lib/estimates";
 import type { LinearIssueFilterOptions } from "@/lib/linear";
+import { sortQueueItems } from "@/lib/queue-sort";
 
 function SortableQueueRow({
   item,
   index,
   onRemove,
+  cards,
 }: {
   item: SessionQueueItem;
   index: number;
   onRemove: () => void;
+  cards: EstimateCard[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
@@ -74,7 +83,7 @@ function SortableQueueRow({
       <span className="estimate-pill">
         {item.currentEstimate === null
           ? "Unpointed"
-          : `${item.currentEstimate} pts`}
+          : voteLabel(item.currentEstimate, cards)}
       </span>
       <button
         aria-label={`Remove ${item.identifier}`}
@@ -90,8 +99,10 @@ function SortableQueueRow({
 
 export function QueueBuilder({
   initialSnapshot,
+  settings,
 }: {
   initialSnapshot: SessionSnapshot;
+  settings: UserSettings;
 }) {
   const router = useRouter();
   const [queue, setQueue] = useState(initialSnapshot.queue);
@@ -102,7 +113,14 @@ export function QueueBuilder({
   const [hasSearched, setHasSearched] = useState(false);
   const [activePanel, setActivePanel] = useState<"find" | "queue">("find");
   const [searching, setSearching] = useState(false);
-  const [bulkAdding, setBulkAdding] = useState<"upcoming" | null>(null);
+  const [bulkAdding, setBulkAdding] = useState(false);
+  const [cycleScope, setCycleScope] = useState(settings.cycleScope);
+  const [stateTypes, setStateTypes] = useState(settings.stateTypes);
+  const [estimateScope, setEstimateScope] = useState(settings.estimateScope);
+  const [assigneeScope, setAssigneeScope] = useState(settings.assigneeScope);
+  const [sortPreset, setSortPreset] = useState<QueueSortPreset>(
+    settings.defaultSort,
+  );
   const [busy, setBusy] = useState(false);
   const [orderStatus, setOrderStatus] = useState<
     "idle" | "saving" | "saved"
@@ -132,13 +150,29 @@ export function QueueBuilder({
     };
   }, [initialSnapshot.teamId]);
 
-  async function refreshSnapshot() {
+  function buildIssueParams(fetchAll = false) {
+    return new URLSearchParams({
+      teamId: initialSnapshot.teamId,
+      cycleScope,
+      stateTypes: stateTypes.join(","),
+      estimateScope,
+      assigneeScope,
+      ...(query ? { query } : {}),
+      ...(fetchAll ? { all: "true" } : {}),
+    });
+  }
+
+  async function refreshSnapshot(): Promise<SessionQueueItem[]> {
     const response = await fetch(
       `/api/sessions/${initialSnapshot.id}/snapshot`,
       { cache: "no-store" },
     );
     const data = await response.json();
-    if (response.ok) setQueue(data.snapshot.queue);
+    if (response.ok) {
+      setQueue(data.snapshot.queue);
+      return data.snapshot.queue;
+    }
+    return queue;
   }
 
   async function searchIssues() {
@@ -147,10 +181,7 @@ export function QueueBuilder({
     setNotice(null);
     setSelected(new Set());
     setHasSearched(true);
-    const params = new URLSearchParams({
-      teamId: initialSnapshot.teamId,
-      ...(query ? { query } : {}),
-    });
+    const params = buildIssueParams();
     try {
       const response = await fetch(`/api/linear/issues?${params}`);
       const data = await response.json();
@@ -180,7 +211,11 @@ export function QueueBuilder({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ issueIds: issues.map((issue) => issue.id) }),
+          body: JSON.stringify({
+            issueIds: issues.map((issue) => issue.id),
+            stateTypes,
+            estimateScope,
+          }),
         },
       );
       const data = await response.json();
@@ -189,7 +224,8 @@ export function QueueBuilder({
       setResults([]);
       setQuery("");
       setHasSearched(false);
-      await refreshSnapshot();
+      const refreshed = await refreshSnapshot();
+      await applySort(settings.defaultSort, refreshed);
       setNotice(
         `Added ${issues.length} ${
           issues.length === 1 ? "ticket" : "tickets"
@@ -205,35 +241,31 @@ export function QueueBuilder({
     }
   }
 
-  async function addUpcomingCycle() {
-    setBulkAdding("upcoming");
+  async function addMatchingTickets() {
+    setBulkAdding(true);
     setError(null);
     setNotice(null);
     try {
-      const params = new URLSearchParams({
-        teamId: initialSnapshot.teamId,
-        upcoming: "true",
-      });
+      const params = buildIssueParams(true);
       const searchResponse = await fetch(`/api/linear/issues?${params}`);
       const searchData = await searchResponse.json();
       if (!searchResponse.ok) throw new Error(searchData.error);
-      const cycleName =
-        searchData.upcomingCycle?.name ??
-        filters?.upcomingCycle?.name ??
-        "the upcoming cycle";
-
-      if (!searchData.upcomingCycle) {
-        setNotice("Linear does not have an upcoming cycle for this team yet.");
+      const selectedCycle = searchData.selectedCycle;
+      if (cycleScope !== "any" && !selectedCycle) {
+        setNotice(
+          `Linear does not have ${cycleScope === "active" ? "an active" : "an upcoming"} cycle for this team.`,
+        );
         return;
       }
 
       const queuedIds = new Set(queue.map((item) => item.linearIssueId));
       const issueIds = (searchData.issues as LinearIssueSummary[])
         .filter((issue) => !queuedIds.has(issue.id))
+        .slice(0, 1000)
         .map((issue) => issue.id);
       if (!issueIds.length) {
         setNotice(
-          `Every unpointed Todo ticket in ${cycleName} is already queued.`,
+          "Every ticket matching these filters is already queued.",
         );
         return;
       }
@@ -243,7 +275,7 @@ export function QueueBuilder({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ issueIds }),
+          body: JSON.stringify({ issueIds, stateTypes, estimateScope }),
         },
       );
       const addData = await addResponse.json();
@@ -252,22 +284,36 @@ export function QueueBuilder({
       setResults([]);
       setQuery("");
       setHasSearched(false);
-      await refreshSnapshot();
+      const refreshed = await refreshSnapshot();
+      await applySort(settings.defaultSort, refreshed);
       setActivePanel("queue");
       setNotice(
-        `Added ${issueIds.length} unpointed Todo ${
+        `Added ${issueIds.length} matching ${
           issueIds.length === 1 ? "ticket" : "tickets"
-        } from ${cycleName} in Linear's manual order.`,
+        }${selectedCycle ? ` from ${selectedCycle.name}` : ""}.`,
       );
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Could not add tickets from the upcoming cycle",
+          : "Could not add matching Linear tickets",
       );
     } finally {
-      setBulkAdding(null);
+      setBulkAdding(false);
     }
+  }
+
+  async function applySort(
+    preset: QueueSortPreset,
+    items: SessionQueueItem[] = queue,
+  ) {
+    if (!items.length) return;
+    const sorted = sortQueueItems(items, preset, settings.customSortRules).map(
+      (item, position) => ({ ...item, position }),
+    );
+    setSortPreset(preset);
+    setQueue(sorted);
+    await persistOrder(sorted);
   }
 
   async function persistOrder(items: SessionQueueItem[]) {
@@ -456,8 +502,8 @@ export function QueueBuilder({
             <p className="step-label">BUILD THE AGENDA</p>
             <h1>What should the team point?</h1>
             <p className="prepare-help">
-              Start with the upcoming cycle, then add or remove individual
-              tickets.
+              Pull a filtered set from Linear, fine-tune the order, then share
+              the room.
             </p>
           </div>
           <div className="queue-stat">
@@ -503,7 +549,7 @@ export function QueueBuilder({
                 </span>
                 <div>
                   <b>Add tickets</b>
-                  <small>Upcoming cycle · Todo · Unpointed</small>
+                  <small>Editable Linear filters for this session</small>
                 </div>
               </div>
               {selected.size > 0 && (
@@ -518,34 +564,113 @@ export function QueueBuilder({
               )}
             </div>
             <div className="quick-add-grid">
-              <section className="quick-add-card">
-                <span className="quick-add-eyebrow">RECOMMENDED</span>
-                <b>Add the upcoming cycle</b>
+              <section className="quick-add-card filter-card">
+                <span className="quick-add-eyebrow">
+                  <SlidersHorizontal size={13} /> LINEAR INTAKE
+                </span>
+                <b>Add matching tickets</b>
                 <p>
-                  Pull in every unpointed Todo ticket exactly as it is ordered
-                  in Linear.
+                  Pull a ready-made batch, or use the same filters to search by
+                  title and identifier.
                 </p>
+                <div className="intake-filter-grid">
+                  <label>
+                    Cycle
+                    <select
+                      onChange={(event) =>
+                        setCycleScope(
+                          event.target.value as UserSettings["cycleScope"],
+                        )
+                      }
+                      value={cycleScope}
+                    >
+                      <option value="upcoming">Upcoming cycle</option>
+                      <option value="active">Active cycle</option>
+                      <option value="any">Any cycle / backlog</option>
+                    </select>
+                  </label>
+                  <label>
+                    Estimates
+                    <select
+                      onChange={(event) =>
+                        setEstimateScope(
+                          event.target.value as UserSettings["estimateScope"],
+                        )
+                      }
+                      value={estimateScope}
+                    >
+                      <option value="unestimated">Unestimated</option>
+                      <option value="estimated">Estimated</option>
+                      <option value="any">Any estimate</option>
+                    </select>
+                  </label>
+                  <label>
+                    Assignee
+                    <select
+                      onChange={(event) =>
+                        setAssigneeScope(
+                          event.target.value as UserSettings["assigneeScope"],
+                        )
+                      }
+                      value={assigneeScope}
+                    >
+                      <option value="anyone">Anyone</option>
+                      <option value="me">Assigned to me</option>
+                      <option value="unassigned">Unassigned</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="intake-statuses">
+                  <span>Status</span>
+                  {([
+                    ["backlog", "Backlog"],
+                    ["unstarted", "Todo"],
+                    ["started", "In Progress"],
+                  ] as const).map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        checked={stateTypes.includes(value)}
+                        onChange={(event) => {
+                          const next = event.target.checked
+                            ? [...stateTypes, value]
+                            : stateTypes.filter((state) => state !== value);
+                          if (next.length) setStateTypes(next);
+                        }}
+                        type="checkbox"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
                 <div className="backlog-source">
                   <span>
-                    {filters?.upcomingCycle?.name ??
-                      (filters ? "No upcoming cycle" : "Finding next cycle…")}
+                    {cycleScope === "upcoming"
+                      ? filters?.upcomingCycle?.name ??
+                        (filters ? "No upcoming cycle" : "Finding cycle…")
+                      : cycleScope === "active"
+                        ? filters?.activeCycle?.name ??
+                          (filters ? "No active cycle" : "Finding cycle…")
+                        : "All matching team tickets"}
                   </span>
-                  <small>Linear order</small>
+                  <small>
+                    {settings.defaultSort === "linear"
+                      ? "Linear order"
+                      : "Your default order"}
+                  </small>
                 </div>
                 <button
                   className="button button-primary"
                   disabled={
-                    !filters?.upcomingCycle || Boolean(bulkAdding) || busy
+                    (cycleScope === "upcoming" && !filters?.upcomingCycle) ||
+                    (cycleScope === "active" && !filters?.activeCycle) ||
+                    bulkAdding ||
+                    busy
                   }
-                  onClick={() => void addUpcomingCycle()}
+                  onClick={() => void addMatchingTickets()}
                   type="button"
                 >
                   <CirclePlus size={15} />
-                  {bulkAdding === "upcoming"
-                    ? "Adding in Linear order…"
-                    : filters?.upcomingCycle
-                      ? `Add ${filters.upcomingCycle.name}`
-                      : "No upcoming cycle"}
+                  {bulkAdding ? "Adding matching tickets…" : "Add all matches"}
                 </button>
               </section>
             </div>
@@ -632,7 +757,7 @@ export function QueueBuilder({
                       ? `${queuedMatch.identifier} is already ready for the meeting.`
                       : hasSearched
                       ? "Try another title or ticket ID."
-                      : "Search by title or ticket ID. Only unpointed Todo tickets are shown."}
+                      : "Search by title or ticket ID using the filters above."}
                   </p>
                   {queuedMatch ? (
                     <button onClick={() => setActivePanel("queue")} type="button">
@@ -678,7 +803,10 @@ export function QueueBuilder({
                       <span>
                         {issue.estimate === null
                           ? "Unpointed"
-                          : `${issue.estimate} pts`}
+                          : voteLabel(
+                              issue.estimate,
+                              initialSnapshot.estimateCards,
+                            )}
                       </span>
                     </button>
                   );
@@ -709,15 +837,38 @@ export function QueueBuilder({
                 </div>
               </div>
               {queue.length > 0 && (
-                <button
-                  className="clear-agenda-button"
-                  disabled={busy}
-                  onClick={() => setConfirmAction("clear-agenda")}
-                  type="button"
-                >
-                  <Trash2 size={14} />
-                  Clear agenda
-                </button>
+                <div className="agenda-tools">
+                  <label>
+                    <ArrowDownAZ size={14} />
+                    <select
+                      aria-label="Sort agenda"
+                      onChange={(event) =>
+                        void applySort(
+                          event.target.value as QueueSortPreset,
+                        )
+                      }
+                      value={sortPreset}
+                    >
+                      <option value="linear">Linear order</option>
+                      <option value="priority">Priority</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="newest">Newest first</option>
+                      <option value="updated">Recently updated</option>
+                      <option value="identifier">Identifier</option>
+                      <option value="title">Title A–Z</option>
+                      <option value="custom">My custom rules</option>
+                    </select>
+                  </label>
+                  <button
+                    className="clear-agenda-button"
+                    disabled={busy}
+                    onClick={() => setConfirmAction("clear-agenda")}
+                    type="button"
+                  >
+                    <Trash2 size={14} />
+                    Clear
+                  </button>
+                </div>
               )}
             </div>
             {queue.length === 0 ? (
@@ -741,6 +892,7 @@ export function QueueBuilder({
                   <div className="queue-edit-list">
                     {queue.map((item, index) => (
                       <SortableQueueRow
+                        cards={initialSnapshot.estimateCards}
                         index={index}
                         item={item}
                         key={item.id}

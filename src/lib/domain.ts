@@ -37,6 +37,8 @@ export interface SessionQueueItem {
   description: string | null;
   url: string;
   priorityLabel: string | null;
+  priority: number;
+  linearSortOrder: number;
   stateName: string | null;
   assigneeName: string | null;
   projectName: string | null;
@@ -58,6 +60,9 @@ export interface SessionQueueItem {
   status: QueueItemStatus;
   currentEstimate: number | null;
   finalEstimate: number | null;
+  linearCreatedAt: string | null;
+  linearUpdatedAt: string | null;
+  dueDate: string | null;
 }
 
 export interface SessionRound {
@@ -102,6 +107,8 @@ export interface LinearIssueSummary {
   description: string | null;
   url: string;
   priorityLabel: string | null;
+  priority: number;
+  sortOrder: number;
   stateName: string | null;
   stateType: string | null;
   assigneeName: string | null;
@@ -122,4 +129,53 @@ export interface LinearIssueSummary {
   }>;
   estimate: number | null;
   teamId: string;
+  createdAt: string;
+  updatedAt: string;
+  dueDate: string | null;
+}
+
+export type PointingPreset =
+  | "linear-team"
+  | "linear"
+  | "fibonacci"
+  | "powers-of-two"
+  | "custom";
+
+export type TicketCycleScope = "upcoming" | "active" | "any";
+export type TicketEstimateScope = "unestimated" | "estimated" | "any";
+export type TicketAssigneeScope = "anyone" | "me" | "unassigned";
+export type PointableStateType = "backlog" | "unstarted" | "started";
+export type QueueSortPreset =
+  | "linear"
+  | "priority"
+  | "oldest"
+  | "newest"
+  | "updated"
+  | "identifier"
+  | "title"
+  | "custom";
+export type QueueSortField =
+  | "priority"
+  | "createdAt"
+  | "updatedAt"
+  | "identifier"
+  | "title"
+  | "estimate";
+export type SortDirection = "asc" | "desc";
+
+export interface QueueSortRule {
+  field: QueueSortField;
+  direction: SortDirection;
+}
+
+export interface UserSettings {
+  pointingPreset: PointingPreset;
+  customPointValues: number[];
+  autoReveal: boolean;
+  cycleScope: TicketCycleScope;
+  stateTypes: PointableStateType[];
+  estimateScope: TicketEstimateScope;
+  assigneeScope: TicketAssigneeScope;
+  defaultSort: QueueSortPreset;
+  customSortRules: QueueSortRule[];
 }

@@ -2,8 +2,9 @@ import { z } from "zod";
 
 import { requireCurrentUser } from "@/lib/auth";
 import { apiError, assertSameOrigin } from "@/lib/http";
-import { isDefaultFacilitatorEmail } from "@/lib/facilitators";
+import { resolvePointingCards } from "@/lib/estimates";
 import { getLinearTeam, hasLinearWriteScope } from "@/lib/linear";
+import { getUserSettings } from "@/lib/settings";
 import { createPokerSession, listPokerSessions } from "@/lib/sessions";
 
 const createSessionSchema = z.object({
@@ -25,15 +26,6 @@ export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
     const user = await requireCurrentUser();
-    if (!isDefaultFacilitatorEmail(user.email)) {
-      return Response.json(
-        {
-          error:
-            "Ask a configured facilitator to create the session. They can promote you after you join.",
-        },
-        { status: 403 },
-      );
-    }
     if (!(await hasLinearWriteScope(user.id))) {
       return Response.json(
         {
@@ -44,12 +36,27 @@ export async function POST(request: Request) {
       );
     }
     const input = createSessionSchema.parse(await request.json());
-    const team = await getLinearTeam(user.id, input.teamId);
+    const [team, settings] = await Promise.all([
+      getLinearTeam(user.id, input.teamId),
+      getUserSettings(user.id),
+    ]);
+    let pointingCards;
+    try {
+      pointingCards = resolvePointingCards(settings, team);
+    } catch (error) {
+      throw new Error(
+        `UNPROCESSABLE:${
+          error instanceof Error ? error.message : "The pointing deck is not compatible with this Linear team"
+        }`,
+      );
+    }
     const session = await createPokerSession({
       userId: user.id,
       organizationId: user.organizationId,
       title: input.title,
       team,
+      pointingCards,
+      autoReveal: settings.autoReveal,
     });
     return Response.json({ session }, { status: 201 });
   } catch (error) {
