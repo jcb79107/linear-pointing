@@ -729,7 +729,11 @@ export function LiveRoom({
       const response = await fetch(`/api/sessions/${snapshot.id}/queue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ issueIds: [issue.id] }),
+        body: JSON.stringify({
+          issueIds: [issue.id],
+          stateTypes: ["unstarted"],
+          estimateScope: "unestimated",
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
@@ -1114,7 +1118,7 @@ export function LiveRoom({
                       <small>
                         {item.identifier}
                         {item.finalEstimate !== null
-                          ? ` · ${item.finalEstimate} pts`
+                          ? ` · ${voteLabel(item.finalEstimate, snapshot.estimateCards)}`
                           : ""}
                       </small>
                     </div>
@@ -1142,7 +1146,9 @@ export function LiveRoom({
           </div>
           <div className="queue-footer">
             <span>{snapshot.teamName}</span>
-            <small>0–4 scale</small>
+            <small>
+              {snapshot.estimateCards.map((card) => card.label).join(" · ")}
+            </small>
           </div>
         </aside>
 

@@ -4,7 +4,6 @@ const serverEnvSchema = z.object({
   APP_URL: z.string().url(),
   LINEAR_CLIENT_ID: z.string().min(1),
   LINEAR_REDIRECT_URI: z.string().url(),
-  ALLOWED_LINEAR_ORG_KEY: z.string().min(1),
   TOKEN_ENCRYPTION_KEY: z.string().min(1),
   DATABASE_URL: z.string().min(1),
   PUSHER_APP_ID: z.string().min(1),
@@ -21,7 +20,6 @@ export function isAppConfigured(): boolean {
   return Boolean(
       process.env.DATABASE_URL &&
       process.env.LINEAR_CLIENT_ID &&
-      process.env.ALLOWED_LINEAR_ORG_KEY &&
       process.env.TOKEN_ENCRYPTION_KEY,
   );
 }
@@ -33,7 +31,6 @@ export function getServerEnv(): ServerEnv {
     LINEAR_REDIRECT_URI:
       process.env.LINEAR_REDIRECT_URI ??
       "http://localhost:3000/api/auth/linear/callback",
-    ALLOWED_LINEAR_ORG_KEY: process.env.ALLOWED_LINEAR_ORG_KEY,
     TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY,
     DATABASE_URL: process.env.DATABASE_URL,
     PUSHER_APP_ID: process.env.PUSHER_APP_ID ?? "disabled",

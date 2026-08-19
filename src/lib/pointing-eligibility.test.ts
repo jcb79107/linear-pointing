@@ -42,12 +42,27 @@ describe("pointing eligibility", () => {
         { estimate: null, stateType: "backlog" },
         "KEY-123",
       ),
-    ).toBe("KEY-123 must be in Todo before it can be pointed");
+    ).toBe("KEY-123 is not in one of the selected Linear statuses");
     expect(
       pointingEligibilityError(
         { estimate: 2, stateType: "unstarted" },
         "KEY-456",
       ),
     ).toBe("KEY-456 already has points in Linear");
+  });
+
+  it("supports broader saved intake policies", () => {
+    expect(
+      isPointableLinearIssue(
+        { estimate: 3, stateType: "started" },
+        { stateTypes: ["unstarted", "started"], estimateScope: "any" },
+      ),
+    ).toBe(true);
+    expect(
+      isPointableLinearIssue(
+        { estimate: null, stateType: "backlog" },
+        { stateTypes: ["backlog"], estimateScope: "estimated" },
+      ),
+    ).toBe(false);
   });
 });

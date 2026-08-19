@@ -7,6 +7,7 @@ import {
   ChevronDown,
   CircleDot,
   Clock3,
+  Settings,
   LogOut,
   Plus,
 } from "lucide-react";
@@ -15,7 +16,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Brand } from "@/components/Brand";
-import type { LinearTeamSummary, SessionStatus } from "@/lib/domain";
+import type {
+  LinearTeamSummary,
+  SessionStatus,
+  UserSettings,
+} from "@/lib/domain";
+import { presetPointValues } from "@/lib/estimates";
 
 interface SessionListItem {
   id: string;
@@ -30,8 +36,8 @@ interface SessionListItem {
 
 interface DashboardClientProps {
   user: { name: string; avatarUrl: string | null };
-  canCreateSessions: boolean;
   teams: LinearTeamSummary[];
+  settings: UserSettings;
   initialSessions: SessionListItem[];
 }
 
@@ -54,8 +60,8 @@ function suggestedSessionTitle() {
 
 export function DashboardClient({
   user,
-  canCreateSessions,
   teams,
+  settings,
   initialSessions,
 }: DashboardClientProps) {
   const router = useRouter();
@@ -101,6 +107,9 @@ export function DashboardClient({
             <b>{user.name}</b>
             <small>Linear connected</small>
           </div>
+          <Link aria-label="Settings" className="header-icon-link" href="/app/settings">
+            <Settings size={16} />
+          </Link>
           <form action="/api/auth/logout" method="post">
             <button aria-label="Sign out" type="submit">
               <LogOut size={16} />
@@ -116,25 +125,19 @@ export function DashboardClient({
             <h1>Pointing sessions</h1>
             <p>Create a session, choose its Linear tickets, and share the link.</p>
           </div>
-          {canCreateSessions ? (
-            <button
-              className="button button-primary button-large"
-              onClick={() => {
-                setTitle(suggestedSessionTitle());
-                setCreating(true);
-              }}
-              type="button"
-            >
-              <Plus size={18} /> New session
-            </button>
-          ) : (
-            <p className="facilitator-note">
-              Ask a configured facilitator to start a session.
-            </p>
-          )}
+          <button
+            className="button button-primary button-large"
+            onClick={() => {
+              setTitle(suggestedSessionTitle());
+              setCreating(true);
+            }}
+            type="button"
+          >
+            <Plus size={18} /> New session
+          </button>
         </div>
 
-        {creating && canCreateSessions && (
+        {creating && (
           <form
             className="new-session-panel"
             onSubmit={(event) => {
@@ -146,8 +149,13 @@ export function DashboardClient({
               <div>
                 <b>New session</b>
                 <p>
-                  Choose the Linear team that owns the tickets. Every session
-                  uses 0, 1, 2, 3, 4.
+                  Choose the Linear team that owns the tickets. This session
+                  will use {settings.pointingPreset === "linear-team"
+                    ? "that team’s Linear estimate scale"
+                    : presetPointValues(
+                        settings.pointingPreset,
+                        settings.customPointValues,
+                      ).join(", ")}.
                 </p>
               </div>
             </div>
@@ -179,8 +187,8 @@ export function DashboardClient({
               </label>
             ) : (
               <div className="form-error">
-                No compatible teams. In Linear team settings, choose the
-                Linear estimate scale and enable zero estimates.
+                No teams with estimates enabled were found. Turn on estimates
+                in a Linear team’s settings, then reconnect.
               </div>
             )}
             {error && <div className="form-error">{error}</div>}

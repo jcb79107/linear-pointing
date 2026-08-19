@@ -1,4 +1,18 @@
+import type {
+  PointableStateType,
+  TicketEstimateScope,
+} from "@/lib/domain";
+
 export const LINEAR_TODO_STATE_TYPE = "unstarted";
+export const DEFAULT_POINTING_POLICY: PointingEligibilityPolicy = {
+  stateTypes: ["unstarted"],
+  estimateScope: "unestimated",
+};
+
+export interface PointingEligibilityPolicy {
+  stateTypes: PointableStateType[];
+  estimateScope: TicketEstimateScope;
+}
 
 export interface PointingEligibilityInput {
   estimate: number | null;
@@ -7,21 +21,37 @@ export interface PointingEligibilityInput {
 
 export function isPointableLinearIssue(
   issue: PointingEligibilityInput,
+  policy: PointingEligibilityPolicy = DEFAULT_POINTING_POLICY,
 ): boolean {
-  return (
-    issue.estimate === null && issue.stateType === LINEAR_TODO_STATE_TYPE
+  const stateMatches = policy.stateTypes.includes(
+    issue.stateType as PointableStateType,
   );
+  const estimateMatches =
+    policy.estimateScope === "any" ||
+    (policy.estimateScope === "unestimated" && issue.estimate === null) ||
+    (policy.estimateScope === "estimated" && issue.estimate !== null);
+  return stateMatches && estimateMatches;
+}
+
+export function isEstimableLinearIssue(
+  issue: Pick<PointingEligibilityInput, "stateType">,
+): boolean {
+  return ["backlog", "unstarted", "started"].includes(issue.stateType ?? "");
 }
 
 export function pointingEligibilityError(
   issue: PointingEligibilityInput,
   identifier = "This ticket",
+  policy: PointingEligibilityPolicy = DEFAULT_POINTING_POLICY,
 ): string | null {
-  if (issue.stateType !== LINEAR_TODO_STATE_TYPE) {
-    return `${identifier} must be in Todo before it can be pointed`;
+  if (!policy.stateTypes.includes(issue.stateType as PointableStateType)) {
+    return `${identifier} is not in one of the selected Linear statuses`;
   }
-  if (issue.estimate !== null) {
+  if (policy.estimateScope === "unestimated" && issue.estimate !== null) {
     return `${identifier} already has points in Linear`;
+  }
+  if (policy.estimateScope === "estimated" && issue.estimate === null) {
+    return `${identifier} does not have an estimate in Linear`;
   }
   return null;
 }

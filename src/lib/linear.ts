@@ -15,6 +15,9 @@ import type {
   EstimateScaleType,
   LinearIssueSummary,
   LinearTeamSummary,
+  PointableStateType,
+  TicketAssigneeScope,
+  TicketEstimateScope,
 } from "@/lib/domain";
 import { getServerEnv } from "@/lib/env";
 import {
@@ -22,10 +25,7 @@ import {
   sortByLinearManualOrder,
   type UpcomingLinearCycle,
 } from "@/lib/linear-order";
-import {
-  isPointableLinearIssue,
-  LINEAR_TODO_STATE_TYPE,
-} from "@/lib/pointing-eligibility";
+import { isPointableLinearIssue } from "@/lib/pointing-eligibility";
 
 interface LinearTokenResponse {
   access_token: string;
@@ -40,9 +40,14 @@ export interface IssueSearchFilters {
   cycleId?: string;
   projectId?: string;
   labelId?: string;
+  stateTypes: PointableStateType[];
+  estimateScope: TicketEstimateScope;
+  assigneeScope: TicketAssigneeScope;
+  assigneeId: string;
 }
 
 export interface LinearIssueFilterOptions {
+  activeCycle: UpcomingLinearCycle | null;
   upcomingCycle: UpcomingLinearCycle | null;
 }
 
@@ -113,11 +118,7 @@ export async function listLinearTeams(
   const client = await getLinearClient(userId);
   const connection = await client.teams({ first: 100 });
   return connection.nodes
-    .filter(
-      (team) =>
-        team.issueEstimationType === "linear" &&
-        team.issueEstimationAllowZero,
-    )
+    .filter((team) => team.issueEstimationType !== "notUsed")
     .map((team) => ({
       id: team.id,
       key: team.key,
@@ -179,6 +180,8 @@ async function summarizeIssue(
     description: issue.description ?? null,
     url: issue.url,
     priorityLabel: issue.priorityLabel || null,
+    priority: issue.priority,
+    sortOrder: issue.sortOrder,
     stateName: state?.name ?? null,
     stateType: state?.type ?? null,
     assigneeName: assignee?.displayName ?? null,
@@ -195,6 +198,9 @@ async function summarizeIssue(
       })) ?? [],
     estimate: issue.estimate ?? null,
     teamId: team.id,
+    createdAt: issue.createdAt.toISOString(),
+    updatedAt: issue.updatedAt.toISOString(),
+    dueDate: issue.dueDate ?? null,
   };
 }
 
@@ -211,6 +217,8 @@ async function summarizeIssueForSearch(
     description: null,
     url: issue.url,
     priorityLabel: issue.priorityLabel || null,
+    priority: issue.priority,
+    sortOrder: issue.sortOrder,
     stateName: state?.name ?? null,
     stateType: state?.type ?? null,
     assigneeName: null,
@@ -220,6 +228,9 @@ async function summarizeIssueForSearch(
     attachments: [],
     estimate: issue.estimate ?? null,
     teamId,
+    createdAt: issue.createdAt.toISOString(),
+    updatedAt: issue.updatedAt.toISOString(),
+    dueDate: issue.dueDate ?? null,
   };
 }
 
@@ -233,19 +244,34 @@ export async function searchLinearIssues(
   if (identifierQuery && /^[A-Z][A-Z0-9]*-\d+$/.test(identifierQuery)) {
     try {
       const issue = await client.issue(identifierQuery);
-      const [team, cycle, project, state, labels] = await Promise.all([
+      const [team, cycle, project, state, labels, assignee] = await Promise.all([
         issue.team,
         filters.cycleId ? issue.cycle : Promise.resolve(undefined),
         filters.projectId ? issue.project : Promise.resolve(undefined),
         issue.state,
         filters.labelId ? issue.labels() : Promise.resolve(undefined),
+        filters.assigneeScope === "anyone"
+          ? Promise.resolve(undefined)
+          : issue.assignee,
       ]);
-      const matches =
-        team?.id === filters.teamId &&
-        isPointableLinearIssue({
+      const policyMatches = isPointableLinearIssue(
+        {
           estimate: issue.estimate ?? null,
           stateType: state?.type ?? null,
-        }) &&
+        },
+        {
+          stateTypes: filters.stateTypes,
+          estimateScope: filters.estimateScope,
+        },
+      );
+      const assigneeMatches =
+        filters.assigneeScope === "anyone" ||
+        (filters.assigneeScope === "me" && assignee?.id === filters.assigneeId) ||
+        (filters.assigneeScope === "unassigned" && !assignee);
+      const matches =
+        team?.id === filters.teamId &&
+        policyMatches &&
+        assigneeMatches &&
         (!filters.cycleId || cycle?.id === filters.cycleId) &&
         (!filters.projectId || project?.id === filters.projectId) &&
         (!filters.labelId ||
@@ -271,8 +297,17 @@ export async function searchLinearIssues(
     ...(filters.labelId
       ? { labels: { id: { eq: filters.labelId } } }
       : {}),
-    state: { type: { eq: LINEAR_TODO_STATE_TYPE } },
-    estimate: { null: true },
+    state: { type: { in: filters.stateTypes } },
+    ...(filters.estimateScope === "unestimated"
+      ? { estimate: { null: true } }
+      : filters.estimateScope === "estimated"
+        ? { estimate: { null: false } }
+        : {}),
+    ...(filters.assigneeScope === "me"
+      ? { assignee: { id: { eq: filters.assigneeId } } }
+      : filters.assigneeScope === "unassigned"
+        ? { assignee: { null: true } }
+        : {}),
   };
 
   const issues = await client.issues({
@@ -315,11 +350,21 @@ export async function getLinearIssueFilterOptions(
 ): Promise<LinearIssueFilterOptions> {
   const client = await getLinearClient(userId);
   const team = await client.team(teamId);
-  const cycles = await team.cycles({
-    first: 50,
-    filter: { isFuture: { eq: true } },
-  });
+  const [activeCycle, cycles] = await Promise.all([
+    team.activeCycle,
+    team.cycles({
+      first: 50,
+      filter: { isFuture: { eq: true } },
+    }),
+  ]);
   return {
+    activeCycle: activeCycle
+      ? {
+          id: activeCycle.id,
+          name: activeCycle.name ?? `Cycle ${activeCycle.number}`,
+          number: activeCycle.number,
+        }
+      : null,
     upcomingCycle: findUpcomingLinearCycle(cycles.nodes),
   };
 }

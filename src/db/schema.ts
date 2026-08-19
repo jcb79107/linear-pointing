@@ -1,5 +1,6 @@
 import {
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -73,6 +74,39 @@ export const linearConnections = pgTable("linear_connections", {
     .notNull(),
 });
 
+export const userSettings = pgTable("user_settings", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  pointingPreset: text("pointing_preset").default("linear-team").notNull(),
+  customPointValues: jsonb("custom_point_values")
+    .$type<number[]>()
+    .default([])
+    .notNull(),
+  autoReveal: boolean("auto_reveal").default(true).notNull(),
+  cycleScope: text("cycle_scope").default("upcoming").notNull(),
+  stateTypes: jsonb("state_types")
+    .$type<string[]>()
+    .default(["unstarted"])
+    .notNull(),
+  estimateScope: text("estimate_scope").default("unestimated").notNull(),
+  assigneeScope: text("assignee_scope").default("anyone").notNull(),
+  defaultSort: text("default_sort").default("linear").notNull(),
+  customSortRules: jsonb("custom_sort_rules")
+    .$type<Array<{ field: string; direction: string }>>()
+    .default([
+      { field: "priority", direction: "asc" },
+      { field: "createdAt", direction: "asc" },
+    ])
+    .notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const authSessions = pgTable(
   "auth_sessions",
   {
@@ -106,6 +140,17 @@ export const pokerSessions = pgTable(
     scaleType: text("scale_type").notNull(),
     scaleAllowZero: boolean("scale_allow_zero").default(false).notNull(),
     scaleExtended: boolean("scale_extended").default(false).notNull(),
+    pointingCards: jsonb("pointing_cards")
+      .$type<Array<{ value: number; label: string }>>()
+      .default([
+        { value: 0, label: "0" },
+        { value: 1, label: "1" },
+        { value: 2, label: "2" },
+        { value: 3, label: "3" },
+        { value: 4, label: "4" },
+      ])
+      .notNull(),
+    autoReveal: boolean("auto_reveal").default(true).notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -134,6 +179,8 @@ export const queueItems = pgTable(
     description: text("description"),
     url: text("url").notNull(),
     priorityLabel: text("priority_label"),
+    priority: integer("priority").default(0).notNull(),
+    linearSortOrder: doublePrecision("linear_sort_order").default(0).notNull(),
     stateName: text("state_name"),
     assigneeName: text("assignee_name"),
     projectName: text("project_name"),
@@ -165,6 +212,9 @@ export const queueItems = pgTable(
     status: queueStatusEnum("status").default("pending").notNull(),
     currentEstimate: integer("current_estimate"),
     finalEstimate: integer("final_estimate"),
+    linearCreatedAt: timestamp("linear_created_at", { withTimezone: true }),
+    linearUpdatedAt: timestamp("linear_updated_at", { withTimezone: true }),
+    dueDate: text("due_date"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

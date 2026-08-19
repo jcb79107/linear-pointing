@@ -28,17 +28,20 @@ import type {
   LinearTeamSummary,
   ParticipantRole,
   SessionSnapshot,
+  EstimateCard,
+  PointableStateType,
+  TicketEstimateScope,
   VoteValue,
 } from "@/lib/domain";
-import { isFinalizableEstimate, POINTING_CARDS } from "@/lib/estimates";
+import { isFinalizableEstimate } from "@/lib/estimates";
 import {
   getLinearIssue,
   updateLinearIssueEstimate,
   userHasTeamAccess,
 } from "@/lib/linear";
 import {
+  isEstimableLinearIssue,
   isPointableLinearIssue,
-  LINEAR_TODO_STATE_TYPE,
   pointingEligibilityError,
 } from "@/lib/pointing-eligibility";
 import {
@@ -69,15 +72,18 @@ function serializeVote(value: VoteValue): string {
   return `${value}`;
 }
 
-function requirePointableIssue(issue: LinearIssueSummary): void {
-  const reason = pointingEligibilityError(issue, issue.identifier);
+function requirePointableIssue(
+  issue: LinearIssueSummary,
+  policy: { stateTypes: PointableStateType[]; estimateScope: TicketEstimateScope },
+): void {
+  const reason = pointingEligibilityError(issue, issue.identifier, policy);
   if (reason) throw new Error(`UNPROCESSABLE:${reason}`);
 }
 
-function requireTodoIssue(issue: LinearIssueSummary): void {
-  if (issue.stateType !== LINEAR_TODO_STATE_TYPE) {
+function requireEstimableIssue(issue: LinearIssueSummary): void {
+  if (!isEstimableLinearIssue(issue)) {
     throw new Error(
-      `UNPROCESSABLE:${issue.identifier} is no longer in Todo and cannot be pointed`,
+      `UNPROCESSABLE:${issue.identifier} is completed or canceled and cannot be pointed`,
     );
   }
 }
@@ -101,15 +107,10 @@ export async function createPokerSession(input: {
   organizationId: string;
   title: string;
   team: LinearTeamSummary;
+  pointingCards: EstimateCard[];
+  autoReveal: boolean;
 }) {
-  if (
-    input.team.issueEstimationType !== "linear" ||
-    !input.team.issueEstimationAllowZero
-  ) {
-    throw new Error(
-      "This tool requires the Linear scale with zero estimates enabled",
-    );
-  }
+  if (!input.pointingCards.length) throw new Error("Choose at least one pointing value");
 
   return db.transaction(async (tx) => {
     const [session] = await tx
@@ -124,6 +125,8 @@ export async function createPokerSession(input: {
         scaleType: input.team.issueEstimationType,
         scaleAllowZero: input.team.issueEstimationAllowZero,
         scaleExtended: input.team.issueEstimationExtended,
+        pointingCards: input.pointingCards,
+        autoReveal: input.autoReveal,
       })
       .returning();
 
@@ -169,6 +172,10 @@ export async function addQueueItems(input: {
   sessionId: string;
   userId: string;
   issueIds: string[];
+  policy: {
+    stateTypes: PointableStateType[];
+    estimateScope: TicketEstimateScope;
+  };
 }) {
   const membership = await requireFacilitator(input.sessionId, input.userId);
   const session = membership.session;
@@ -202,10 +209,10 @@ export async function addQueueItems(input: {
     throw new Error("All queue items must belong to the session team");
   }
   const ineligibleIssue = issues.find(
-    (issue) => !isPointableLinearIssue(issue),
+    (issue) => !isPointableLinearIssue(issue, input.policy),
   );
   if (ineligibleIssue) {
-    requirePointableIssue(ineligibleIssue);
+    requirePointableIssue(ineligibleIssue, input.policy);
   }
 
   const [{ lastPosition }] = await db
@@ -227,6 +234,8 @@ export async function addQueueItems(input: {
           description: issue.description,
           url: issue.url,
           priorityLabel: issue.priorityLabel,
+          priority: issue.priority,
+          linearSortOrder: issue.sortOrder,
           stateName: issue.stateName,
           assigneeName: issue.assigneeName,
           projectName: issue.projectName,
@@ -235,6 +244,9 @@ export async function addQueueItems(input: {
           attachments: issue.attachments,
           position: start + index,
           currentEstimate: issue.estimate,
+          linearCreatedAt: new Date(issue.createdAt),
+          linearUpdatedAt: new Date(issue.updatedAt),
+          dueDate: issue.dueDate,
         })),
       )
       .onConflictDoNothing()
@@ -271,6 +283,17 @@ export async function reorderQueue(input: {
     ) {
       throw new Error("Queue order does not match the current session");
     }
+    // Move every row out of the final position range first. Updating a swap
+    // directly (0 -> 1 while position 1 still exists) violates the unique
+    // session/position index before the second row can move.
+    const temporaryOffset = existing.length + 1000;
+    await tx
+      .update(queueItems)
+      .set({
+        position: sql`${queueItems.position} + ${temporaryOffset}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(queueItems.sessionId, input.sessionId));
     for (const [position, itemId] of input.orderedItemIds.entries()) {
       await tx
         .update(queueItems)
@@ -392,7 +415,7 @@ export async function startPokerSession(sessionId: string, userId: string) {
     userId,
     firstItem.linearIssueId,
   );
-  requirePointableIssue(refreshedFirst);
+  requireEstimableIssue(refreshedFirst);
 
   await db.transaction(async (tx) => {
     await tx
@@ -411,6 +434,8 @@ export async function startPokerSession(sessionId: string, userId: string) {
         title: refreshedFirst.title,
         description: refreshedFirst.description,
         priorityLabel: refreshedFirst.priorityLabel,
+        priority: refreshedFirst.priority,
+        linearSortOrder: refreshedFirst.sortOrder,
         stateName: refreshedFirst.stateName,
         assigneeName: refreshedFirst.assigneeName,
         projectName: refreshedFirst.projectName,
@@ -418,6 +443,9 @@ export async function startPokerSession(sessionId: string, userId: string) {
         subIssues: refreshedFirst.subIssues,
         attachments: refreshedFirst.attachments,
         currentEstimate: refreshedFirst.estimate,
+        linearCreatedAt: new Date(refreshedFirst.createdAt),
+        linearUpdatedAt: new Date(refreshedFirst.updatedAt),
+        dueDate: refreshedFirst.dueDate,
         updatedAt: new Date(),
       })
       .where(eq(queueItems.id, firstItem.id));
@@ -451,7 +479,7 @@ async function createRound(
       queueItemId,
       number: (highestRound ?? 0) + 1,
       estimateAtStart,
-      scaleValues: POINTING_CARDS.map((card) => card.value),
+      scaleValues: session.pointingCards.map((card) => card.value),
     })
     .returning();
 
@@ -676,13 +704,15 @@ export async function getSessionSnapshot(
     teamName: session.teamName,
     scaleType:
       session.scaleType as LinearTeamSummary["issueEstimationType"],
-    estimateCards: POINTING_CARDS,
+    estimateCards: session.pointingCards,
     currentUserId: userId,
     currentUserRole: role,
     activeItemId: session.activeQueueItemId,
     queue: queue.map((item) => ({
       ...item,
       labels: item.labels,
+      linearCreatedAt: item.linearCreatedAt?.toISOString() ?? null,
+      linearUpdatedAt: item.linearUpdatedAt?.toISOString() ?? null,
     })),
     participants: memberRows.map((member) => {
       const rawVote =
@@ -746,6 +776,8 @@ export async function refreshActiveIssuePreview(
         description: refreshed.description,
         url: refreshed.url,
         priorityLabel: refreshed.priorityLabel,
+        priority: refreshed.priority,
+        linearSortOrder: refreshed.sortOrder,
         stateName: refreshed.stateName,
         assigneeName: refreshed.assigneeName,
         projectName: refreshed.projectName,
@@ -753,6 +785,9 @@ export async function refreshActiveIssuePreview(
         subIssues: refreshed.subIssues,
         attachments: refreshed.attachments,
         currentEstimate: refreshed.estimate,
+        linearCreatedAt: new Date(refreshed.createdAt),
+        linearUpdatedAt: new Date(refreshed.updatedAt),
+        dueDate: refreshed.dueDate,
         updatedAt: new Date(),
       })
       .where(eq(queueItems.id, item.id));
@@ -771,7 +806,7 @@ export async function castVote(input: {
   userId: string;
   value: VoteValue;
 }) {
-  await requireMembership(input.sessionId, input.userId);
+  const { session } = await requireMembership(input.sessionId, input.userId);
 
   await db.transaction(async (tx) => {
     const [round] = await tx
@@ -818,7 +853,7 @@ export async function castVote(input: {
 
     const validValues = round.scaleValues;
     if (!validValues.includes(input.value)) {
-      throw new Error("Vote must be 0, 1, 2, 3, or 4");
+      throw new Error(`Vote must be one of: ${validValues.join(", ")}`);
     }
 
     await tx
@@ -852,6 +887,7 @@ export async function castVote(input: {
         .where(eq(votes.roundId, round.id)),
     ]);
     if (
+      session.autoReveal &&
       shouldAutoReveal(
         eligibleRows.map((row) => row.userId),
         voteRows.map((row) => row.userId),
@@ -923,7 +959,10 @@ export async function setParticipantRole(input: {
   role: ParticipantRole;
   addToCurrentRound?: boolean;
 }) {
-  await requireFacilitator(input.sessionId, input.actorUserId);
+  const { session } = await requireFacilitator(
+    input.sessionId,
+    input.actorUserId,
+  );
   const targetMembership = await requireMembership(
     input.sessionId,
     input.participantUserId,
@@ -1008,6 +1047,7 @@ export async function setParticipantRole(input: {
           .where(eq(votes.roundId, round.id)),
       ]);
       if (
+        session.autoReveal &&
         shouldAutoReveal(
           eligibleRows.map((row) => row.userId),
           voteRows.map((row) => row.userId),
@@ -1057,7 +1097,7 @@ export async function activateQueueItem(input: {
   if (!target) throw new Error("Issue not found in this session");
 
   const refreshed = await getLinearIssue(input.userId, target.linearIssueId);
-  requirePointableIssue(refreshed);
+  requireEstimableIssue(refreshed);
   await db.transaction(async (tx) => {
     await tx
       .update(rounds)
@@ -1085,6 +1125,8 @@ export async function activateQueueItem(input: {
         title: refreshed.title,
         description: refreshed.description,
         priorityLabel: refreshed.priorityLabel,
+        priority: refreshed.priority,
+        linearSortOrder: refreshed.sortOrder,
         stateName: refreshed.stateName,
         assigneeName: refreshed.assigneeName,
         projectName: refreshed.projectName,
@@ -1092,6 +1134,9 @@ export async function activateQueueItem(input: {
         subIssues: refreshed.subIssues,
         attachments: refreshed.attachments,
         currentEstimate: refreshed.estimate,
+        linearCreatedAt: new Date(refreshed.createdAt),
+        linearUpdatedAt: new Date(refreshed.updatedAt),
+        dueDate: refreshed.dueDate,
         updatedAt: new Date(),
       })
       .where(eq(queueItems.id, target.id));
@@ -1129,7 +1174,7 @@ export async function skipActiveItem(sessionId: string, userId: string) {
   const refreshedNext = nextQueueItem
     ? await getLinearIssue(userId, nextQueueItem.linearIssueId)
     : null;
-  if (refreshedNext) requirePointableIssue(refreshedNext);
+  if (refreshedNext) requireEstimableIssue(refreshedNext);
 
   await db.transaction(async (tx) => {
     await tx
@@ -1153,6 +1198,8 @@ export async function skipActiveItem(sessionId: string, userId: string) {
           title: refreshedNext!.title,
           description: refreshedNext!.description,
           priorityLabel: refreshedNext!.priorityLabel,
+          priority: refreshedNext!.priority,
+          linearSortOrder: refreshedNext!.sortOrder,
           stateName: refreshedNext!.stateName,
           assigneeName: refreshedNext!.assigneeName,
           projectName: refreshedNext!.projectName,
@@ -1160,6 +1207,9 @@ export async function skipActiveItem(sessionId: string, userId: string) {
           subIssues: refreshedNext!.subIssues,
           attachments: refreshedNext!.attachments,
           currentEstimate: refreshedNext!.estimate,
+          linearCreatedAt: new Date(refreshedNext!.createdAt),
+          linearUpdatedAt: new Date(refreshedNext!.updatedAt),
+          dueDate: refreshedNext!.dueDate,
           updatedAt: new Date(),
         })
         .where(eq(queueItems.id, nextId));
@@ -1221,8 +1271,10 @@ export async function finalizeEstimate(input: {
     .limit(1);
   if (!item || !round) throw new Error("Reveal the round before finalizing");
 
-  if (!isFinalizableEstimate(input.estimate, POINTING_CARDS)) {
-    throw new Error("Final estimate must be 0, 1, 2, 3, or 4");
+  if (!isFinalizableEstimate(input.estimate, session.pointingCards)) {
+    throw new Error(
+      `Final estimate must be one of: ${session.pointingCards.map((card) => card.label).join(", ")}`,
+    );
   }
 
   let attemptedWriteback = false;
@@ -1242,7 +1294,7 @@ export async function finalizeEstimate(input: {
       }
 
       const latest = await getLinearIssue(input.userId, item.linearIssueId);
-      requireTodoIssue(latest);
+      requireEstimableIssue(latest);
       if (
         latest.estimate !== lockedRound.estimateAtStart &&
         latest.estimate !== input.estimate &&
@@ -1298,6 +1350,8 @@ export async function finalizeEstimate(input: {
             title: refreshedNext.title,
             description: refreshedNext.description,
             priorityLabel: refreshedNext.priorityLabel,
+            priority: refreshedNext.priority,
+            linearSortOrder: refreshedNext.sortOrder,
             stateName: refreshedNext.stateName,
             assigneeName: refreshedNext.assigneeName,
             projectName: refreshedNext.projectName,
@@ -1305,6 +1359,9 @@ export async function finalizeEstimate(input: {
             subIssues: refreshedNext.subIssues,
             attachments: refreshedNext.attachments,
             currentEstimate: refreshedNext.estimate,
+            linearCreatedAt: new Date(refreshedNext.createdAt),
+            linearUpdatedAt: new Date(refreshedNext.updatedAt),
+            dueDate: refreshedNext.dueDate,
             updatedAt: new Date(),
           })
           .where(eq(queueItems.id, nextId));

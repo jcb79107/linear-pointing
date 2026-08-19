@@ -81,15 +81,6 @@ export async function GET(request: Request) {
   const viewer = await client.viewer;
   const organization = await viewer.organization;
 
-  if (organization.urlKey !== env.ALLOWED_LINEAR_ORG_KEY) {
-    console.warn("Linear OAuth rejected workspace", {
-      receivedWorkspaceKey: organization.urlKey,
-    });
-    return NextResponse.redirect(
-      new URL("/app?authError=wrong_workspace", env.APP_URL),
-    );
-  }
-
   const [user] = await db
     .insert(users)
     .values({
