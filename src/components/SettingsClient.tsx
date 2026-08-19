@@ -7,14 +7,18 @@ import {
   CircleAlert,
   ExternalLink,
   Link2,
+  Monitor,
+  Moon,
+  Palette,
   Plus,
   Save,
   SlidersHorizontal,
   Sparkles,
+  Sun,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { Brand } from "@/components/Brand";
 import type {
@@ -29,6 +33,13 @@ import {
   presetPointValues,
   resolvePointingCards,
 } from "@/lib/estimates";
+import {
+  getServerThemePreference,
+  readThemePreference,
+  saveThemePreference,
+  subscribeThemePreference,
+  type ThemePreference,
+} from "@/lib/theme";
 
 interface SettingsClientProps {
   user: { name: string; email: string | null };
@@ -73,6 +84,32 @@ const sortFields: Array<{ id: QueueSortField; name: string }> = [
   { id: "estimate", name: "Current estimate" },
 ];
 
+const themeOptions = [
+  {
+    id: "system",
+    name: "System",
+    description: "Match this device",
+    icon: Monitor,
+  },
+  {
+    id: "light",
+    name: "Light",
+    description: "Always use light mode",
+    icon: Sun,
+  },
+  {
+    id: "dark",
+    name: "Dark",
+    description: "Always use dark mode",
+    icon: Moon,
+  },
+] satisfies Array<{
+  id: ThemePreference;
+  name: string;
+  description: string;
+  icon: typeof Monitor;
+}>;
+
 function parsePointValues(value: string): number[] | null {
   const parts = value
     .split(/[\s,]+/)
@@ -103,6 +140,11 @@ export function SettingsClient({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const themePreference = useSyncExternalStore(
+    subscribeThemePreference,
+    readThemePreference,
+    getServerThemePreference,
+  );
 
   const parsedCustomValues = useMemo(
     () => parsePointValues(customValues),
@@ -160,6 +202,10 @@ export function SettingsClient({
     }
   }
 
+  function chooseTheme(preference: ThemePreference) {
+    saveThemePreference(preference);
+  }
+
   return (
     <main className="settings-shell">
       <header className="app-header settings-header">
@@ -189,6 +235,7 @@ export function SettingsClient({
 
         <div className="settings-layout">
           <nav className="settings-nav" aria-label="Settings sections">
+            <a href="#appearance"><Palette size={16} /> Appearance</a>
             <a href="#linear"><Link2 size={16} /> Linear connection</a>
             <a href="#deck"><Sparkles size={16} /> Pointing deck</a>
             <a href="#tickets"><SlidersHorizontal size={16} /> Ticket intake</a>
@@ -196,6 +243,43 @@ export function SettingsClient({
           </nav>
 
           <div className="settings-sections">
+            <section className="settings-card" id="appearance">
+              <div className="settings-card-heading">
+                <span className="settings-icon purple"><Palette size={18} /></span>
+                <div>
+                  <h2>Appearance</h2>
+                  <p>Choose the color mode that works best in your workspace.</p>
+                </div>
+              </div>
+              <div className="theme-options" role="group" aria-label="Color mode">
+                {themeOptions.map((option) => {
+                  const Icon = option.icon;
+                  const selected = themePreference === option.id;
+
+                  return (
+                    <button
+                      aria-pressed={selected}
+                      className={`theme-option ${selected ? "selected" : ""}`}
+                      key={option.id}
+                      onClick={() => chooseTheme(option.id)}
+                      type="button"
+                    >
+                      <span><Icon size={19} /></span>
+                      <b>{option.name}</b>
+                      <small>{option.description}</small>
+                      <i aria-hidden="true">{selected && <Check size={13} />}</i>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="theme-save-note" aria-live="polite">
+                {themePreference === "system"
+                  ? "Following your device appearance. Changes are applied automatically."
+                  : `${themePreference === "dark" ? "Dark" : "Light"} mode is active.`}
+                <span> Saved on this device.</span>
+              </p>
+            </section>
+
             <section className="settings-card" id="linear">
               <div className="settings-card-heading">
                 <span className="settings-icon"><Link2 size={18} /></span>
