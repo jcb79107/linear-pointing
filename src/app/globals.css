@@ -1746,9 +1746,101 @@ code {
   color: var(--blue);
 }
 
+.settings-icon.purple {
+  background: color-mix(in srgb, #8b5cf6 14%, var(--panel));
+  color: #7c3aed;
+}
+
 .settings-icon.dark {
   background: var(--ink);
   color: white;
+}
+
+.theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.theme-option {
+  position: relative;
+  display: grid;
+  min-height: 112px;
+  align-content: start;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 15px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.theme-option:hover,
+.theme-option.selected {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, var(--panel));
+}
+
+.theme-option > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  margin-bottom: 5px;
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--muted);
+}
+
+.theme-option.selected > span {
+  background: var(--blue);
+  color: white;
+}
+
+.theme-option b {
+  font-size: 12px;
+}
+
+.theme-option small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.theme-option > i {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--blue);
+  color: white;
+  font-style: normal;
+}
+
+.theme-option:not(.selected) > i {
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+.theme-save-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.theme-save-note span {
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .connection-row {
@@ -2236,6 +2328,7 @@ code {
   }
 
   .deck-grid,
+  .theme-options,
   .settings-form-grid,
   .intake-filter-grid {
     grid-template-columns: 1fr;
@@ -3872,7 +3965,7 @@ body {
 
 /* Readability, system theme, and responsive live-session layouts */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 .room-shell {
@@ -4047,201 +4140,200 @@ body {
   font-size: 10px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #f1f5f9;
-    --muted: #a3acb8;
-    --paper: #101317;
-    --panel: #171b21;
-    --line: #2a3038;
-    --orange: #60a5fa;
-    --orange-soft: #17243a;
-    --acid: #4ade80;
-    --navy: #f1f5f9;
-    --blue: #60a5fa;
-    --green: #4ade80;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #f1f5f9;
+  --muted: #a3acb8;
+  --paper: #101317;
+  --panel: #171b21;
+  --line: #2a3038;
+  --orange: #60a5fa;
+  --orange-soft: #17243a;
+  --acid: #4ade80;
+  --navy: #0f1720;
+  --blue: #60a5fa;
+  --green: #4ade80;
+}
 
-  html,
-  body,
-  .landing-shell,
-  .dashboard-shell,
-  .prepare-shell,
-  .auth-shell,
-  .setup-shell {
-    background: var(--paper);
-    color: var(--ink);
-  }
+:root[data-theme="dark"],
+:root[data-theme="dark"] body,
+:root[data-theme="dark"] .landing-shell,
+:root[data-theme="dark"] .dashboard-shell,
+:root[data-theme="dark"] .prepare-shell,
+:root[data-theme="dark"] .auth-shell,
+:root[data-theme="dark"] .setup-shell {
+  background: var(--paper);
+  color: var(--ink);
+}
 
-  .app-header,
-  .prepare-header,
-  .simple-header,
-  .new-session-panel,
-  .session-list,
-  .auth-card,
-  .setup-card,
-  .join-card,
-  .issue-finder,
-  .queue-editor,
-  .filter-panel,
-  .session-row,
-  .card-heading {
-    border-color: var(--line);
-    background: var(--panel);
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .app-header,
+:root[data-theme="dark"] .prepare-header,
+:root[data-theme="dark"] .simple-header,
+:root[data-theme="dark"] .new-session-panel,
+:root[data-theme="dark"] .session-list,
+:root[data-theme="dark"] .auth-card,
+:root[data-theme="dark"] .setup-card,
+:root[data-theme="dark"] .join-card,
+:root[data-theme="dark"] .issue-finder,
+:root[data-theme="dark"] .queue-editor,
+:root[data-theme="dark"] .filter-panel,
+:root[data-theme="dark"] .session-row,
+:root[data-theme="dark"] .card-heading {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
 
-  input,
-  select,
-  textarea,
-  .button-ghost {
-    border-color: var(--line);
-    background: #11161c;
-    color: var(--ink);
-  }
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .button-ghost {
+  border-color: var(--line);
+  background: #11161c;
+  color: var(--ink);
+}
 
-  .brand-mark,
-  .room-title .brand-mark {
-    background: #3b4654;
-  }
+:root[data-theme="dark"] .brand-mark,
+:root[data-theme="dark"] .room-title .brand-mark {
+  background: #3b4654;
+}
 
-  .dashboard-welcome p,
-  .prepare-help,
-  .panel-intro p,
-  .session-info span,
-  .empty-sessions,
-  .auth-card p,
-  .auth-card small,
-  .setup-card p {
-    color: var(--muted);
-  }
+:root[data-theme="dark"] .dashboard-welcome p,
+:root[data-theme="dark"] .prepare-help,
+:root[data-theme="dark"] .panel-intro p,
+:root[data-theme="dark"] .session-info span,
+:root[data-theme="dark"] .empty-sessions,
+:root[data-theme="dark"] .auth-card p,
+:root[data-theme="dark"] .auth-card small,
+:root[data-theme="dark"] .setup-card p {
+  color: var(--muted);
+}
 
-  .room-shell {
-    background: var(--paper);
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .room-shell {
+  background: var(--paper);
+  color: var(--ink);
+}
 
-  .room-header,
-  .room-queue,
-  .room-team,
-  .room-issue,
-  .facilitator-controls {
-    border-color: var(--line);
-    background: var(--panel);
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .room-header,
+:root[data-theme="dark"] .room-queue,
+:root[data-theme="dark"] .room-team,
+:root[data-theme="dark"] .room-issue,
+:root[data-theme="dark"] .facilitator-controls {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
 
-  .room-grid > * + *,
-  .pane-heading,
-  .queue-footer,
-  .vote-dock,
-  .facilitator-controls,
-  .sub-issues > div {
-    border-color: var(--line);
-  }
+:root[data-theme="dark"] .room-grid > * + *,
+:root[data-theme="dark"] .pane-heading,
+:root[data-theme="dark"] .queue-footer,
+:root[data-theme="dark"] .vote-dock,
+:root[data-theme="dark"] .facilitator-controls,
+:root[data-theme="dark"] .sub-issues > div {
+  border-color: var(--line);
+}
 
-  .room-title b,
-  .room-issue h1,
-  .issue-description h1,
-  .issue-description h2,
-  .issue-description h3,
-  .participant b,
-  .sub-issues b {
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .room-title b,
+:root[data-theme="dark"] .room-issue h1,
+:root[data-theme="dark"] .issue-description h1,
+:root[data-theme="dark"] .issue-description h2,
+:root[data-theme="dark"] .issue-description h3,
+:root[data-theme="dark"] .participant b,
+:root[data-theme="dark"] .sub-issues b {
+  color: var(--ink);
+}
 
-  .room-title span,
-  .room-title > a,
-  .room-progress > span,
-  .pane-heading > span,
-  .pane-heading > b,
-  .room-ticket,
-  .issue-meta-row,
-  .issue-meta-row a,
-  .issue-tags span,
-  .issue-description,
-  .vote-dock-head > div,
-  .vote-dock-head span,
-  .participant small,
-  .participant select,
-  .result-label span,
-  .result-label small,
-  .text-action {
-    color: var(--muted);
-  }
+:root[data-theme="dark"] .room-title span,
+:root[data-theme="dark"] .room-title > a,
+:root[data-theme="dark"] .room-progress > span,
+:root[data-theme="dark"] .pane-heading > span,
+:root[data-theme="dark"] .pane-heading > b,
+:root[data-theme="dark"] .room-ticket,
+:root[data-theme="dark"] .issue-meta-row,
+:root[data-theme="dark"] .issue-meta-row a,
+:root[data-theme="dark"] .issue-tags span,
+:root[data-theme="dark"] .issue-description,
+:root[data-theme="dark"] .vote-dock-head > div,
+:root[data-theme="dark"] .vote-dock-head span,
+:root[data-theme="dark"] .participant small,
+:root[data-theme="dark"] .participant select,
+:root[data-theme="dark"] .result-label span,
+:root[data-theme="dark"] .result-label small,
+:root[data-theme="dark"] .text-action {
+  color: var(--muted);
+}
 
-  .room-actions button,
-  .vote-cards button,
-  .final-values button,
-  .facilitator-wait {
-    border-color: #343c47;
-    background: #1d232b;
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .room-actions button,
+:root[data-theme="dark"] .vote-cards button,
+:root[data-theme="dark"] .final-values button,
+:root[data-theme="dark"] .facilitator-wait {
+  border-color: #343c47;
+  background: #1d232b;
+  color: var(--ink);
+}
 
-  .room-ticket:hover:not(:disabled),
-  .participant:hover {
-    background: #1c222a;
-  }
+:root[data-theme="dark"] .room-ticket:hover:not(:disabled),
+:root[data-theme="dark"] .participant:hover {
+  background: #1c222a;
+}
 
-  .room-ticket.active {
-    border-color: #3d4856;
-    background: #222a34;
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .room-ticket.active {
+  border-color: #3d4856;
+  background: #222a34;
+  color: var(--ink);
+}
 
-  .issue-tags span,
-  .figma-design > div,
-  .vote-dock {
-    border-color: var(--line);
-    background: #13181e;
-  }
+:root[data-theme="dark"] .issue-tags span,
+:root[data-theme="dark"] .figma-design > div,
+:root[data-theme="dark"] .vote-dock {
+  border-color: var(--line);
+  background: #13181e;
+}
 
-  .issue-description code,
-  .vote-status {
-    background: #222932;
-    color: #cbd5e1;
-  }
+:root[data-theme="dark"] .issue-description code,
+:root[data-theme="dark"] .vote-status {
+  background: #222932;
+  color: #cbd5e1;
+}
 
-  .issue-description pre {
-    border-color: var(--line);
-    background: #11161c;
-  }
+:root[data-theme="dark"] .issue-description pre {
+  border-color: var(--line);
+  background: #11161c;
+}
 
-  .issue-description li::marker {
-    color: #7f8b99;
-  }
+:root[data-theme="dark"] .issue-description li::marker {
+  color: #7f8b99;
+}
 
-  .figma-design {
-    border-color: var(--line);
-  }
+:root[data-theme="dark"] .figma-design {
+  border-color: var(--line);
+}
 
-  .participant-avatar {
-    background: #29313b;
-    color: #d4dbe4;
-  }
+:root[data-theme="dark"] .participant-avatar {
+  background: #29313b;
+  color: #d4dbe4;
+}
 
-  .presence-dot {
-    border-color: var(--panel);
-  }
+:root[data-theme="dark"] .presence-dot {
+  border-color: var(--panel);
+}
 
-  .vote-status.done {
-    background: #143322;
-    color: #4ade80;
-  }
+:root[data-theme="dark"] .vote-status.done {
+  background: #143322;
+  color: #4ade80;
+}
 
-  .vote-status.revealed {
-    border-color: #3b4653;
-    background: #252d37;
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .vote-status.revealed {
+  border-color: #3b4653;
+  background: #252d37;
+  color: var(--ink);
+}
 
-  .vote-cards button.selected,
-  .final-values button.selected {
-    border-color: #3b82f6;
-    background: #3b82f6;
-    color: white;
-  }
+:root[data-theme="dark"] .vote-cards button.selected,
+:root[data-theme="dark"] .final-values button.selected {
+  border-color: #3b82f6;
+  background: #3b82f6;
+  color: white;
 }
 
 /* Grooming essentials */
@@ -4648,11 +4740,9 @@ body {
   min-height: 38px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .confirm-dialog-icon {
-    background: #351c1c;
-    color: #fca5a5;
-  }
+:root[data-theme="dark"] .confirm-dialog-icon {
+  background: #351c1c;
+  color: #fca5a5;
 }
 
 @media (max-width: 700px) {
@@ -4860,24 +4950,22 @@ body {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .quick-add-grid {
-    background: var(--paper);
-  }
+:root[data-theme="dark"] .quick-add-grid {
+  background: var(--paper);
+}
 
-  .quick-add-card,
-  .quick-add-card select,
-  .backlog-source {
-    border-color: var(--line);
-    background: var(--panel);
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .quick-add-card,
+:root[data-theme="dark"] .quick-add-card select,
+:root[data-theme="dark"] .backlog-source {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
 
-  .clear-agenda-button:hover:not(:disabled) {
-    border-color: #6f3434;
-    background: #321b1b;
-    color: #fca5a5;
-  }
+:root[data-theme="dark"] .clear-agenda-button:hover:not(:disabled) {
+  border-color: #6f3434;
+  background: #321b1b;
+  color: #fca5a5;
 }
 
 @media (max-width: 1180px) {
@@ -5657,34 +5745,32 @@ body {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .cycle-quick-add,
-  .issue-result.selected {
-    background: color-mix(in srgb, var(--blue) 10%, var(--panel));
-  }
+:root[data-theme="dark"] .cycle-quick-add,
+:root[data-theme="dark"] .issue-result.selected {
+  background: color-mix(in srgb, var(--blue) 10%, var(--panel));
+}
 
-  .issue-result:hover,
-  .estimate-pill {
-    background: var(--paper);
-  }
+:root[data-theme="dark"] .issue-result:hover,
+:root[data-theme="dark"] .estimate-pill {
+  background: var(--paper);
+}
 
-  .result-check,
-  .filter-check span,
-  .queue-edit-row {
-    border-color: var(--line);
-    background: var(--panel);
-  }
+:root[data-theme="dark"] .result-check,
+:root[data-theme="dark"] .filter-check span,
+:root[data-theme="dark"] .queue-edit-row {
+  border-color: var(--line);
+  background: var(--panel);
+}
 
-  .issue-result.selected .result-check {
-    border-color: var(--blue);
-    background: var(--blue);
-  }
+:root[data-theme="dark"] .issue-result.selected .result-check {
+  border-color: var(--blue);
+  background: var(--blue);
+}
 
-  .prepare-actions .prepare-delete:hover:not(:disabled) {
-    border-color: #6f3434;
-    background: #321b1b;
-    color: #fca5a5;
-  }
+:root[data-theme="dark"] .prepare-actions .prepare-delete:hover:not(:disabled) {
+  border-color: #6f3434;
+  background: #321b1b;
+  color: #fca5a5;
 }
 
 /* Final sizing pass after the agenda-builder overrides above */
@@ -5783,38 +5869,89 @@ body {
   color: var(--ink);
 }
 
-@media (prefers-color-scheme: dark) {
-  .settings-header,
-  .settings-card {
-    border-color: var(--line);
-    background: var(--panel);
-  }
+:root[data-theme="dark"] .settings-header,
+:root[data-theme="dark"] .settings-card {
+  border-color: var(--line);
+  background: var(--panel);
+}
 
-  .header-icon-link:hover,
-  .sort-rule button:hover {
-    background: var(--paper);
-    color: var(--ink);
-  }
+:root[data-theme="dark"] .header-icon-link:hover,
+:root[data-theme="dark"] .sort-rule button:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
 
-  .connection-row {
-    border-color: #29513f;
-    background: #13231c;
-  }
+:root[data-theme="dark"] .connection-row {
+  border-color: #29513f;
+  background: #13231c;
+}
 
-  .deck-option:hover,
-  .deck-option.selected {
-    border-color: var(--blue);
-    background: color-mix(in srgb, var(--blue) 12%, var(--panel));
-  }
+:root[data-theme="dark"] .deck-option:hover,
+:root[data-theme="dark"] .deck-option.selected {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
+}
 
-  .status-picker label,
-  .intake-statuses label {
-    border-color: var(--line);
-    background: var(--paper);
-  }
+:root[data-theme="dark"] .status-picker label,
+:root[data-theme="dark"] .intake-statuses label {
+  border-color: var(--line);
+  background: var(--paper);
+}
 
-  .custom-sort-builder,
-  .toggle-row {
-    border-color: var(--line);
+:root[data-theme="dark"] .custom-sort-builder,
+:root[data-theme="dark"] .toggle-row {
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .settings-field,
+:root[data-theme="dark"] .status-picker legend {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .settings-icon.dark,
+:root[data-theme="dark"] .sort-rule > span {
+  background: #3b4654;
+  color: white;
+}
+
+:root[data-theme="dark"] .settings-icon.purple {
+  background: color-mix(in srgb, #a78bfa 15%, var(--panel));
+  color: #c4b5fd;
+}
+
+:root[data-theme="dark"] .theme-option,
+:root[data-theme="dark"] .theme-option > span {
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .theme-option > span {
+  background: var(--paper);
+}
+
+:root[data-theme="dark"] .theme-option:hover,
+:root[data-theme="dark"] .theme-option.selected {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, var(--panel));
+}
+
+:root[data-theme="dark"] .theme-option.selected > span {
+  background: var(--blue);
+  color: white;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .app-header,
+  .prepare-header,
+  .simple-header,
+  .settings-card,
+  .room-header,
+  .room-queue,
+  .room-team,
+  .room-issue {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease;
   }
 }
