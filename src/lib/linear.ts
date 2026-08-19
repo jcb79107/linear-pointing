@@ -223,7 +223,7 @@ async function summarizeIssueForSearch(
     id: issue.id,
     identifier: issue.identifier,
     title: issue.title,
-    description: null,
+    description: issue.description ?? null,
     url: issue.url,
     priorityLabel: issue.priorityLabel || null,
     priority: issue.priority,

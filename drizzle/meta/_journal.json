@@ -36,6 +36,13 @@
       "when": 1787161862265,
       "tag": "0004_hot_cable",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787167041711,
+      "tag": "0005_magenta_wendigo",
+      "breakpoints": true
     }
   ]
 }

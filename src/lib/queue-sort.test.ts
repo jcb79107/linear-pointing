@@ -30,6 +30,8 @@ function item(
     groomingOutcome: null,
     groomingNote: null,
     decidedAt: null,
+    activeStartedAt: null,
+    elapsedSeconds: 0,
     linearCreatedAt: null,
     linearUpdatedAt: null,
     dueDate: null,

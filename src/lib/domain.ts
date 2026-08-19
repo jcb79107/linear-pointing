@@ -14,6 +14,7 @@ export type EstimateScaleType =
   | "linear"
   | "tShirt";
 export type VoteValue = number;
+export type RoundSignal = "needs-context";
 
 export interface EstimateCard {
   value: number;
@@ -33,6 +34,7 @@ export interface SessionParticipant extends SessionUser {
   online: boolean;
   hasVoted: boolean;
   vote: VoteValue | null;
+  signal: RoundSignal | null;
 }
 
 export interface SessionQueueItem {
@@ -69,6 +71,8 @@ export interface SessionQueueItem {
   groomingOutcome: GroomingOutcome | null;
   groomingNote: string | null;
   decidedAt: string | null;
+  activeStartedAt: string | null;
+  elapsedSeconds: number;
   linearCreatedAt: string | null;
   linearUpdatedAt: string | null;
   dueDate: string | null;
@@ -89,6 +93,10 @@ export interface SessionSnapshot {
   code: string;
   title: string;
   status: SessionStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  activeStartedAt: string | null;
+  elapsedSeconds: number;
   teamId: string;
   teamName: string;
   scaleType: EstimateScaleType;

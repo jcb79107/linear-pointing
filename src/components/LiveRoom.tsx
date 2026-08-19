@@ -6,12 +6,14 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  CircleHelp,
   CircleDot,
   CirclePlus,
   Copy,
   ExternalLink,
   Eye,
   EyeOff,
+  Keyboard,
   LoaderCircle,
   RefreshCw,
   RotateCcw,
@@ -27,7 +29,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -39,6 +47,7 @@ import type {
   GroomingOutcome,
   LinearIssueSummary,
   ParticipantRole,
+  RoundSignal,
   SessionParticipant,
   SessionSnapshot,
   UserSettings,
@@ -51,8 +60,9 @@ import {
   figmaPreviewTitle,
   isFigmaUrl,
 } from "@/lib/figma";
-import { majorityVote } from "@/lib/rounds";
+import { roundedUpAverageVote } from "@/lib/rounds";
 import { readinessChecks } from "@/lib/readiness";
+import { accumulatedElapsedSeconds } from "@/lib/timing";
 
 interface LiveRoomProps {
   initialSnapshot: SessionSnapshot;
@@ -96,7 +106,7 @@ function localVote(
 ): SessionSnapshot {
   const participants = snapshot.participants.map((person) =>
     person.id === userId
-      ? { ...person, hasVoted: true, vote: value }
+      ? { ...person, hasVoted: true, vote: value, signal: null }
       : person,
   );
   const allVoted =
@@ -107,7 +117,7 @@ function localVote(
     snapshot.round?.eligibleVoterIds.includes(person.id)
       ? {
           ...person,
-          vote: person.vote ?? ([1, 2, 3, 4][index] as VoteValue),
+          vote: person.vote ?? ([1, 2, 4, 4][index] as VoteValue),
         }
       : { ...person, hasVoted: false, vote: null },
   );
@@ -138,7 +148,27 @@ function optimisticVote(
     ...snapshot,
     participants: snapshot.participants.map((person) =>
       person.id === userId
-        ? { ...person, hasVoted: true, vote: value }
+        ? { ...person, hasVoted: true, vote: value, signal: null }
+        : person,
+    ),
+  };
+}
+
+function optimisticSignal(
+  snapshot: SessionSnapshot,
+  userId: string,
+  signal: RoundSignal | null,
+): SessionSnapshot {
+  return {
+    ...snapshot,
+    participants: snapshot.participants.map((person) =>
+      person.id === userId
+        ? {
+            ...person,
+            signal,
+            hasVoted: signal ? false : person.hasVoted,
+            vote: signal ? null : person.vote,
+          }
         : person,
     ),
   };
@@ -172,6 +202,7 @@ export function LiveRoom({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [busy, setBusy] = useState(false);
   const [voteBusy, setVoteBusy] = useState(false);
+  const [signalBusy, setSignalBusy] = useState(false);
   const [refreshingIssue, setRefreshingIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewNotice, setPreviewNotice] = useState<string | null>(null);
@@ -179,6 +210,7 @@ export function LiveRoom({
     "connected" | "reconnecting" | "offline"
   >("connected");
   const [copied, setCopied] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [decisionNote, setDecisionNote] = useState("");
   const [addIssueOpen, setAddIssueOpen] = useState(false);
   const [addIssueQuery, setAddIssueQuery] = useState("");
@@ -406,6 +438,9 @@ export function LiveRoom({
   const voteSpread = revealedVotes.length
     ? `${Math.min(...revealedVotes)}–${Math.max(...revealedVotes)}`
     : null;
+  const contextParticipants = eligibleParticipants.filter(
+    (participant) => participant.signal === "needs-context",
+  );
   const readiness = activeItem ? readinessChecks(activeItem) : [];
   const normalizedAddIssueQuery = addIssueQuery.trim().toLowerCase();
   const addQueuedMatch = normalizedAddIssueQuery
@@ -415,13 +450,13 @@ export function LiveRoom({
           item.title.toLowerCase().includes(normalizedAddIssueQuery),
       )
     : null;
-  const suggestedFinalEstimate = revealed
-    ? majorityVote(
-        eligibleParticipants
-          .map((participant) => participant.vote)
-          .filter((vote): vote is number => vote !== null),
+  const averageResult = revealed
+    ? roundedUpAverageVote(
+        revealedVotes,
+        snapshot.estimateCards.map((card) => card.value),
       )
     : null;
+  const suggestedFinalEstimate = averageResult?.estimate ?? null;
   const selectedFinalEstimate =
     finalEstimate?.queueItemId === snapshot.activeItemId
       ? finalEstimate.value
@@ -463,6 +498,45 @@ export function LiveRoom({
     }
   }
 
+  async function toggleContextSignal() {
+    const nextSignal = me?.signal === "needs-context" ? null : "needs-context";
+    setError(null);
+    if (demoMode) {
+      setSnapshot((current) =>
+        optimisticSignal(current, current.currentUserId, nextSignal),
+      );
+      return;
+    }
+    setSignalBusy(true);
+    setSnapshot((current) =>
+      optimisticSignal(current, current.currentUserId, nextSignal),
+    );
+    try {
+      const { data, response } = await requestJson<RoomApiResponse>(
+        `/api/sessions/${snapshot.id}/signal`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signal: nextSignal }),
+        },
+      );
+      if (!response.ok || !data.snapshot) {
+        throw new Error(data.error ?? "Could not update your context signal");
+      }
+      setSnapshot(data.snapshot);
+      setSyncState("connected");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not update your context signal",
+      );
+      await refresh();
+    } finally {
+      setSignalBusy(false);
+    }
+  }
+
   function demoAction(
     action: string,
     payload: Record<string, unknown> = {},
@@ -479,9 +553,11 @@ export function LiveRoom({
           },
           participants: current.participants.map((person, index) =>
             current.round?.eligibleVoterIds.includes(person.id)
-              ? {
+              ? person.signal
+                ? { ...person, vote: null, hasVoted: false }
+                : {
                   ...person,
-                  vote: person.vote ?? ([1, 2, 3, 4][index] as number),
+                  vote: person.vote ?? ([1, 2, 4, 4][index] as number),
                   hasVoted: true,
                 }
               : { ...person, vote: null, hasVoted: false },
@@ -502,15 +578,19 @@ export function LiveRoom({
             ...person,
             vote: null,
             hasVoted: false,
+            signal: null,
           })),
         };
       }
       if (action === "activate") {
         const queueItemId = String(payload.queueItemId);
         const round = localRound(current, queueItemId);
+        const activatedAt = new Date().toISOString();
         return {
           ...current,
           status: "live",
+          endedAt: null,
+          activeStartedAt: current.activeStartedAt ?? activatedAt,
           activeItemId: queueItemId,
           queue: current.queue.map((item) => ({
             ...item,
@@ -520,6 +600,19 @@ export function LiveRoom({
                 : item.status === "active"
                   ? "pending"
                   : item.status,
+            activeStartedAt:
+              item.id === queueItemId
+                ? activatedAt
+                : item.status === "active"
+                  ? null
+                  : item.activeStartedAt,
+            elapsedSeconds:
+              item.status === "active" && item.id !== queueItemId
+                ? accumulatedElapsedSeconds(
+                    item.elapsedSeconds,
+                    item.activeStartedAt,
+                  )
+                : item.elapsedSeconds,
             finalEstimate: item.id === queueItemId ? null : item.finalEstimate,
             groomingOutcome: item.id === queueItemId ? null : item.groomingOutcome,
             groomingNote: item.id === queueItemId ? null : item.groomingNote,
@@ -530,6 +623,7 @@ export function LiveRoom({
             ...person,
             vote: null,
             hasVoted: false,
+            signal: null,
           })),
         };
       }
@@ -570,9 +664,17 @@ export function LiveRoom({
             item.position > (currentActive?.position ?? -1) &&
             item.status === "pending",
         );
+        const decidedAt = new Date().toISOString();
+        const sessionElapsed = accumulatedElapsedSeconds(
+          current.elapsedSeconds,
+          current.activeStartedAt,
+        );
         return {
           ...current,
           status: next ? "live" : "ended",
+          endedAt: next ? null : decidedAt,
+          activeStartedAt: next ? current.activeStartedAt : null,
+          elapsedSeconds: next ? current.elapsedSeconds : sessionElapsed,
           activeItemId: next?.id ?? null,
           queue: current.queue.map((item) => ({
             ...item,
@@ -594,14 +696,28 @@ export function LiveRoom({
                 : item.groomingNote,
             decidedAt:
               item.id === current.activeItemId
-                ? new Date().toISOString()
+                ? decidedAt
                 : item.decidedAt,
+            activeStartedAt:
+              item.id === current.activeItemId
+                ? null
+                : item.id === next?.id
+                  ? decidedAt
+                  : item.activeStartedAt,
+            elapsedSeconds:
+              item.id === current.activeItemId
+                ? accumulatedElapsedSeconds(
+                    item.elapsedSeconds,
+                    item.activeStartedAt,
+                  )
+                : item.elapsedSeconds,
           })),
           round: next ? localRound(current, next.id) : null,
           participants: current.participants.map((person) => ({
             ...person,
             vote: null,
             hasVoted: false,
+            signal: null,
           })),
         };
       }
@@ -614,9 +730,17 @@ export function LiveRoom({
             item.position > (currentActive?.position ?? -1) &&
             item.status === "pending",
         );
+        const decidedAt = new Date().toISOString();
+        const sessionElapsed = accumulatedElapsedSeconds(
+          current.elapsedSeconds,
+          current.activeStartedAt,
+        );
         return {
           ...current,
           status: next ? "live" : "ended",
+          endedAt: next ? null : decidedAt,
+          activeStartedAt: next ? current.activeStartedAt : null,
+          elapsedSeconds: next ? current.elapsedSeconds : sessionElapsed,
           activeItemId: next?.id ?? null,
           queue: current.queue.map((item) => ({
             ...item,
@@ -636,25 +760,54 @@ export function LiveRoom({
                 : item.groomingNote,
             decidedAt:
               item.id === current.activeItemId
-                ? new Date().toISOString()
+                ? decidedAt
                 : item.decidedAt,
+            activeStartedAt:
+              item.id === current.activeItemId
+                ? null
+                : item.id === next?.id
+                  ? decidedAt
+                  : item.activeStartedAt,
+            elapsedSeconds:
+              item.id === current.activeItemId
+                ? accumulatedElapsedSeconds(
+                    item.elapsedSeconds,
+                    item.activeStartedAt,
+                  )
+                : item.elapsedSeconds,
           })),
           round: next ? localRound(current, next.id) : null,
           participants: current.participants.map((person) => ({
             ...person,
             vote: null,
             hasVoted: false,
+            signal: null,
           })),
         };
       }
       if (action === "finish") {
+        const finishedAt = new Date().toISOString();
         return {
           ...current,
           status: "ended",
+          endedAt: finishedAt,
+          activeStartedAt: null,
+          elapsedSeconds: accumulatedElapsedSeconds(
+            current.elapsedSeconds,
+            current.activeStartedAt,
+          ),
           activeItemId: null,
           queue: current.queue.map((item) => ({
             ...item,
             status: item.status === "active" ? "pending" : item.status,
+            activeStartedAt: item.status === "active" ? null : item.activeStartedAt,
+            elapsedSeconds:
+              item.status === "active"
+                ? accumulatedElapsedSeconds(
+                    item.elapsedSeconds,
+                    item.activeStartedAt,
+                  )
+                : item.elapsedSeconds,
           })),
           round: null,
         };
@@ -914,6 +1067,66 @@ export function LiveRoom({
     }
   }
 
+  const handleRoomShortcut = useEffectEvent((event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      target?.closest("input, textarea, select, [contenteditable='true']")
+    ) {
+      return;
+    }
+    if (event.key === "Escape" && shortcutsOpen) {
+      setShortcutsOpen(false);
+      return;
+    }
+    if (addIssueOpen) return;
+    if (event.key === "?") {
+      event.preventDefault();
+      setShortcutsOpen((current) => !current);
+      return;
+    }
+    const key = event.key.toLowerCase();
+    if (key === "c") {
+      event.preventDefault();
+      void copyInvite();
+      return;
+    }
+    if (canVote && !voteBusy && /^[1-9]$/.test(key)) {
+      const card = snapshot.estimateCards[Number(key) - 1];
+      if (card) {
+        event.preventDefault();
+        void vote(card.value);
+      }
+      return;
+    }
+    if (isFacilitator && key === "r" && !revealed && !busy) {
+      event.preventDefault();
+      void action("reveal");
+      return;
+    }
+    if (
+      isFacilitator &&
+      key === "n" &&
+      revealed &&
+      selectedFinalEstimate !== null &&
+      !busy
+    ) {
+      event.preventDefault();
+      void action("finalize", {
+        estimate: selectedFinalEstimate,
+        note: decisionNote,
+      });
+    }
+  });
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => handleRoomShortcut(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
+
   return (
     <main
       className={`room-shell ${
@@ -945,8 +1158,23 @@ export function LiveRoom({
               }}
             />
           </div>
+          <ElapsedTimer
+            activeStartedAt={snapshot.activeStartedAt}
+            baseSeconds={snapshot.elapsedSeconds}
+            label="Total"
+          />
         </div>
         <div className="room-actions">
+          <button
+            aria-expanded={shortcutsOpen}
+            aria-label="Keyboard shortcuts"
+            className="shortcut-help-button"
+            onClick={() => setShortcutsOpen((current) => !current)}
+            title="Keyboard shortcuts (?)"
+            type="button"
+          >
+            <Keyboard size={16} />
+          </button>
           {isFacilitator && snapshot.status === "live" && !demoMode && (
             <button
               aria-label="Add ticket"
@@ -989,6 +1217,22 @@ export function LiveRoom({
             </button>
           )}
         </div>
+        {shortcutsOpen && (
+          <section
+            aria-label="Keyboard shortcuts"
+            className="shortcut-panel"
+            role="dialog"
+          >
+            <div><b>Keyboard shortcuts</b><button aria-label="Close shortcuts" onClick={() => setShortcutsOpen(false)} type="button"><X size={14} /></button></div>
+            <dl>
+              {canVote && <><dt>1–9</dt><dd>Choose a pointing card</dd></>}
+              {isFacilitator && !revealed && <><dt>R</dt><dd>Reveal this round</dd></>}
+              {isFacilitator && revealed && <><dt>N</dt><dd>Apply estimate and advance</dd></>}
+              <dt>C</dt><dd>Copy invite link</dd>
+              <dt>?</dt><dd>Open or close this help</dd>
+            </dl>
+          </section>
+        )}
       </header>
 
       {error && <div className="room-error">{error}</div>}
@@ -1207,6 +1451,16 @@ export function LiveRoom({
                         {item.groomingOutcome && item.groomingOutcome !== "ready"
                           ? ` · ${groomingOutcomeLabel(item.groomingOutcome)}`
                           : ""}
+                        {(item.elapsedSeconds > 0 || item.activeStartedAt) && (
+                          <>
+                            {" · "}
+                            <ElapsedTimer
+                              activeStartedAt={item.activeStartedAt}
+                              baseSeconds={item.elapsedSeconds}
+                              compact
+                            />
+                          </>
+                        )}
                       </small>
                     </div>
                     {item.id === snapshot.activeItemId && (
@@ -1401,27 +1655,49 @@ export function LiveRoom({
                     {eligibleVoterCount === 0
                       ? `Round ${snapshot.round?.number ?? "—"} · No voters yet`
                       : `Round ${snapshot.round?.number ?? "—"} · ${submittedVoteCount}/${eligibleVoterCount} ready`}
-                    {snapshot.round && <RoundTimer startedAt={snapshot.round.createdAt} />}
+                    {activeItem && (
+                      <ElapsedTimer
+                        activeStartedAt={activeItem.activeStartedAt}
+                        baseSeconds={activeItem.elapsedSeconds}
+                        label="Issue"
+                      />
+                    )}
                   </span>
                 </div>
                 {isEligibleVoter ? (
-                  <div className="vote-cards">
-                    {snapshot.estimateCards.map((card) => (
-                      <button
-                        className={
-                          me?.hasVoted && me.vote === card.value
-                            ? "selected"
-                            : ""
-                        }
-                        aria-pressed={me?.hasVoted && me.vote === card.value}
-                        disabled={!canVote || voteBusy}
-                        key={card.value}
-                        onClick={() => void vote(card.value)}
-                        type="button"
-                      >
-                        {card.label}
-                      </button>
-                    ))}
+                  <div className="voter-controls">
+                    <div className="vote-cards">
+                      {snapshot.estimateCards.map((card, index) => (
+                        <button
+                          className={
+                            me?.hasVoted && me.vote === card.value
+                              ? "selected"
+                              : ""
+                          }
+                          aria-label={`${card.label} points${index < 9 ? `, shortcut ${index + 1}` : ""}`}
+                          aria-pressed={me?.hasVoted && me.vote === card.value}
+                          disabled={!canVote || voteBusy || signalBusy}
+                          key={card.value}
+                          onClick={() => void vote(card.value)}
+                          type="button"
+                        >
+                          <span>{card.label}</span>
+                          {index < 9 && <kbd aria-hidden="true">{index + 1}</kbd>}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      aria-pressed={me?.signal === "needs-context"}
+                      className={`context-signal-button ${me?.signal ? "active" : ""}`}
+                      disabled={!canVote || voteBusy || signalBusy}
+                      onClick={() => void toggleContextSignal()}
+                      type="button"
+                    >
+                      <CircleHelp size={15} />
+                      {me?.signal === "needs-context"
+                        ? "Context requested — clear"
+                        : "I need more context"}
+                    </button>
                   </div>
                 ) : isFacilitator ? (
                   <div
@@ -1460,12 +1736,23 @@ export function LiveRoom({
                 )}
               </div>
             </>
+          ) : snapshot.status === "draft" ? (
+            <WaitingRoom
+              isFacilitator={isFacilitator}
+              participantCount={snapshot.participants.length}
+              participants={snapshot.participants}
+              prepareHref={`/app/sessions/${snapshot.id}/prepare`}
+              ticketCount={snapshot.queue.length}
+              title={snapshot.title}
+            />
           ) : (
             <SessionSummary
               cards={snapshot.estimateCards}
               isFacilitator={isFacilitator}
               items={snapshot.queue}
               onResume={(queueItemId) => void action("activate", { queueItemId })}
+              sessionActiveStartedAt={snapshot.activeStartedAt}
+              sessionElapsedSeconds={snapshot.elapsedSeconds}
               title={snapshot.title}
             />
           )}
@@ -1501,6 +1788,21 @@ export function LiveRoom({
 
           {isFacilitator && activeItem && (
             <div className="facilitator-controls">
+              {contextParticipants.length > 0 && (
+                <div className="context-alert" role="status">
+                  <CircleHelp size={15} />
+                  <span>
+                    <b>
+                      {contextParticipants.length}{" "}
+                      {contextParticipants.length === 1 ? "person needs" : "people need"}{" "}
+                      context
+                    </b>
+                    <small>
+                      {contextParticipants.map((person) => person.name).join(", ")}
+                    </small>
+                  </span>
+                </div>
+              )}
               {revealed ? (
                 <>
                   <div className="result-label">
@@ -1510,7 +1812,10 @@ export function LiveRoom({
                         ? "Your selection"
                         : suggestedFinalEstimate === null
                           ? "Choose after discussion"
-                          : "Most common vote selected"}
+                          : `Average ${formatAverage(averageResult?.average)} → ${voteLabel(
+                              suggestedFinalEstimate,
+                              snapshot.estimateCards,
+                            )}`}
                       {voteSpread && ` · spread ${voteSpread}`}
                     </small>
                   </div>
@@ -1632,21 +1937,96 @@ export function LiveRoom({
   );
 }
 
-function RoundTimer({ startedAt }: { startedAt: string }) {
+function WaitingRoom({
+  isFacilitator,
+  participantCount,
+  participants,
+  prepareHref,
+  ticketCount,
+  title,
+}: {
+  isFacilitator: boolean;
+  participantCount: number;
+  participants: SessionParticipant[];
+  prepareHref: string;
+  ticketCount: number;
+  title: string;
+}) {
+  return (
+    <div className="waiting-room">
+      <span><Users size={24} /></span>
+      <p className="step-label">WAITING ROOM</p>
+      <h1>{title}</h1>
+      <p>
+        {participantCount} {participantCount === 1 ? "person is" : "people are"}{" "}
+        here · {ticketCount} {ticketCount === 1 ? "ticket" : "tickets"} ready
+      </p>
+      <div className="waiting-participants" aria-label="Joined participants">
+        {participants.map((person) => (
+          <span key={person.id} title={person.name}>
+            {initials(person.name)}
+          </span>
+        ))}
+      </div>
+      {isFacilitator ? (
+        <>
+          <p>Return to preparation when the team is loaded, then start the first ticket.</p>
+          <Link className="button button-primary" href={prepareHref}>
+            Review agenda and start <SkipForward size={16} />
+          </Link>
+        </>
+      ) : (
+        <p>Keep this tab open. The first ticket will appear automatically.</p>
+      )}
+    </div>
+  );
+}
+
+function formatDuration(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function formatAverage(average: number | undefined) {
+  if (average === undefined) return "—";
+  return Number.isInteger(average) ? `${average}` : average.toFixed(1);
+}
+
+function ElapsedTimer({
+  activeStartedAt,
+  baseSeconds,
+  compact = false,
+  label,
+}: {
+  activeStartedAt: string | null;
+  baseSeconds: number;
+  compact?: boolean;
+  label?: string;
+}) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
+    if (!activeStartedAt) return;
+    const frame = window.requestAnimationFrame(() => setNow(Date.now()));
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const seconds =
-    now === null
-      ? 0
-      : Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000));
-  const minutes = Math.floor(seconds / 60);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [activeStartedAt]);
+  const activeSeconds =
+    now !== null && activeStartedAt
+      ? Math.max(0, Math.floor((now - Date.parse(activeStartedAt)) / 1000))
+      : 0;
   return (
-    <small className="round-timer">
-      {minutes}:{String(seconds % 60).padStart(2, "0")}
-    </small>
+    <span className={compact ? "elapsed-timer compact" : "elapsed-timer"}>
+      {label && `${label} `}
+      {formatDuration(baseSeconds + activeSeconds)}
+    </span>
   );
 }
 
@@ -1671,12 +2051,16 @@ function SessionSummary({
   title,
   isFacilitator,
   onResume,
+  sessionActiveStartedAt,
+  sessionElapsedSeconds,
 }: {
   items: SessionSnapshot["queue"];
   cards: SessionSnapshot["estimateCards"];
   title: string;
   isFacilitator: boolean;
   onResume: (queueItemId: string) => void;
+  sessionActiveStartedAt: string | null;
+  sessionElapsedSeconds: number;
 }) {
   const [copied, setCopied] = useState(false);
   const remaining = items.filter(
@@ -1684,6 +2068,12 @@ function SessionSummary({
   );
   const summaryText = [
     title,
+    `Total time: ${formatDuration(
+      accumulatedElapsedSeconds(
+        sessionElapsedSeconds,
+        sessionActiveStartedAt,
+      ),
+    )}`,
     "",
     ...items.map((item) => {
       const outcome =
@@ -1696,7 +2086,10 @@ function SessionSummary({
       const estimate =
         item.finalEstimate === null ? "" : ` · ${voteLabel(item.finalEstimate, cards)}`;
       const note = item.groomingNote ? ` — ${item.groomingNote}` : "";
-      return `${item.identifier}: ${groomingOutcomeLabel(outcome)}${estimate}${note}`;
+      const duration = item.elapsedSeconds
+        ? ` · ${formatDuration(item.elapsedSeconds)}`
+        : "";
+      return `${item.identifier}: ${groomingOutcomeLabel(outcome)}${estimate}${duration}${note}`;
     }),
   ].join("\n");
 
@@ -1715,7 +2108,11 @@ function SessionSummary({
           <h1>{remaining.length ? "Finished for now." : "That’s the queue."}</h1>
           <p>
             {items.filter((item) => item.groomingOutcome === "ready" || item.status === "estimated").length} ready ·{" "}
-            {remaining.length} remaining
+            {remaining.length} remaining ·{" "}
+            <ElapsedTimer
+              activeStartedAt={sessionActiveStartedAt}
+              baseSeconds={sessionElapsedSeconds}
+            />
           </p>
         </div>
       </div>
@@ -1738,6 +2135,7 @@ function SessionSummary({
               <em className={outcome ?? "pending"}>
                 {groomingOutcomeLabel(outcome)}
                 {item.finalEstimate !== null && ` · ${voteLabel(item.finalEstimate, cards)}`}
+                {item.elapsedSeconds > 0 && ` · ${formatDuration(item.elapsedSeconds)}`}
               </em>
             </a>
           );
@@ -1817,9 +2215,13 @@ function Participant({
         )}
       </div>
       <span
-        className={`vote-status ${person.hasVoted ? "done" : ""} ${revealed ? "revealed" : ""}`}
+        aria-label={person.signal === "needs-context" ? `${person.name} needs context` : undefined}
+        className={`vote-status ${person.hasVoted ? "done" : ""} ${person.signal ? "signal" : ""} ${revealed ? "revealed" : ""}`}
+        title={person.signal === "needs-context" ? "Needs more context" : undefined}
       >
-        {revealed && person.vote !== null ? (
+        {person.signal === "needs-context" ? (
+          <CircleHelp size={14} />
+        ) : revealed && person.vote !== null ? (
           voteLabel(person.vote, cards)
         ) : person.hasVoted ? (
           <Check size={14} />

@@ -222,6 +222,9 @@ export function DashboardClient({
               <CircleDot size={24} />
               <b>No pointing sessions yet</b>
               <p>Your first prepared queue will appear here.</p>
+              <Link className="button button-ghost" href="/demo">
+                Try the demo room
+              </Link>
             </div>
           ) : (
             <div className="session-list">

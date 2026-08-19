@@ -2,10 +2,10 @@ import { z } from "zod";
 
 import { requireCurrentUser } from "@/lib/auth";
 import { apiError, assertSameOrigin } from "@/lib/http";
-import { castVote, getSessionSnapshot } from "@/lib/sessions";
+import { getSessionSnapshot, setRoundSignal } from "@/lib/sessions";
 
-const voteSchema = z.object({
-  value: z.number().int().min(0).max(100),
+const signalSchema = z.object({
+  signal: z.literal("needs-context").nullable(),
 });
 
 export async function POST(
@@ -14,12 +14,16 @@ export async function POST(
 ) {
   try {
     assertSameOrigin(request);
-    const [user, { id }] = await Promise.all([
+    const [user, { id }, input] = await Promise.all([
       requireCurrentUser(),
       params,
+      request.json().then((value) => signalSchema.parse(value)),
     ]);
-    const input = voteSchema.parse(await request.json());
-    await castVote({ sessionId: id, userId: user.id, value: input.value });
+    await setRoundSignal({
+      sessionId: id,
+      userId: user.id,
+      signal: input.signal,
+    });
     return Response.json({
       success: true,
       snapshot: await getSessionSnapshot(id, user.id),

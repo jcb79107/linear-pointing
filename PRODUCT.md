@@ -18,19 +18,29 @@ purpose-built for product managers and teams that already use Linear.
    filters, Linear custom views, reveal behavior, and sort order.
 5. **Private votes, shared understanding.** Votes stay hidden until reveal;
    consensus is a conversation aid, never an automatic product decision.
-6. **Self-hosting stays boring.** Linear OAuth and Postgres are the only
+6. **The default decision is explainable.** Average the submitted numeric votes
+   and round up to the next estimate value supported by the Linear team. The
+   facilitator can still choose another value after discussion.
+7. **Self-hosting stays boring.** Linear OAuth and Postgres are the only
    required services. Realtime infrastructure is optional.
 
-## Core workflow
+## Canonical product-manager workflow
 
-1. Sign in with Linear and select a team.
-2. Import an upcoming cycle, active cycle, all matching tickets, or a saved
-   Linear custom view.
-3. Reorder the agenda and share the room.
-4. Check readiness, discuss, vote privately, and reveal together.
-5. Mark the issue Ready with an estimate, Needs details, Split, or Parked.
-6. Copy the session summary, resume unfinished work later, and keep the durable
-   decision in Linear.
+1. A product manager prepares tickets in Linear before grooming.
+2. Shortly before the meeting, they create a pointing session and pull the
+   upcoming cycle's unestimated Todo tickets by default. Every intake rule is
+   editable, including custom Linear views.
+3. They review readiness, put the tickets in the desired order, copy the Slack
+   invite, and watch the team join with their Linear accounts.
+4. Once the room is loaded, the facilitator starts the session. Every developer
+   can inspect the Linear description, attachments, sub-issues, and linked Figma
+   at their own pace on a computer or phone.
+5. Developers either request more context or vote privately. When votes reveal,
+   the app averages them and rounds up to the next valid Linear estimate card.
+6. The facilitator confirms or overrides the suggestion, writes it to Linear,
+   and advances to the next ticket.
+7. The room tracks total meeting time and time per ticket until the queue is
+   complete, parked, split, or marked as needing details.
 
 ## Deliberate non-goals
 
@@ -47,13 +57,16 @@ purpose-built for product managers and teams that already use Linear.
 - Make the full grooming loop fast, recoverable, and accessible.
 - Make Linear custom views and sensible personal defaults the shortest path to
   a useful agenda.
+- Dogfood the public entry, waiting room, readiness intake, keyboard workflow,
+  rounded-average decision, and meeting timers with real grooming teams.
 - Keep public setup documented and deployment reproducible.
 
 ### Next
 
-- Add facilitator keyboard shortcuts and stronger focus management.
 - Let teams save a small number of reusable grooming profiles when one set of
   personal defaults is no longer enough.
+- Add privacy-conscious, aggregate workflow measurements only after observed
+  sessions identify the questions they need to answer.
 - Add lightweight decision-history insights only when they help improve ticket
   readiness or meeting quality.
 

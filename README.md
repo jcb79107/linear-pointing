@@ -17,20 +17,27 @@ The product decisions behind the configurable workflow are documented in
   ordering defaults
 - ticket intake by active/upcoming/any cycle; Backlog, Todo, and In Progress
   status; estimate state; assignee scope; or an existing Linear custom view
+- pre-meeting context filters for tickets with a useful description and
+  acceptance criteria, plus full readiness scores in the prepared agenda
 - one-click agenda creation from matching Linear issues
 - individual-ticket search and adding before or during a session
 - Linear, priority, age, recency, identifier, title, and custom multi-rule sort
   presets, plus drag-to-reorder agenda preparation
-- a simple 16:9 room with issue Markdown, attachments, embedded Figma designs,
-  sub-issues, queue progress, roster, and voting controls
+- a responsive room with issue Markdown, attachments, embedded Figma designs,
+  sub-issues, queue progress, roster, and phone-friendly voting controls
 - every native Linear estimate scale plus compatible Linear, Fibonacci,
   powers-of-two, and custom numeric decks
 - ticket-readiness checks for description, acceptance criteria, owner, and project
 - secret replaceable votes, configurable automatic reveal, early reveal,
   facilitator voting, observers, absences, late joins, revotes, and issue revisit
+- a pre-session waiting room, copyable Slack invite, joined-team count,
+  keyboard voting/facilitation shortcuts, and a non-numeric Need context signal
+- a suggested final estimate based on the arithmetic average, rounded up to the
+  next valid Linear estimate card, with a facilitator override before write-back
 - explicit Ready, Needs details, Split, and Parked decisions; optional decision
   notes are written back to the Linear issue
-- pause/resume and a copyable session summary so grooming can stop on time
+- total-session and per-ticket timers, pause/resume, and a copyable timed
+  session summary so grooming can stop on time
 - conflict detection before Linear estimate overwrite
 - PostgreSQL-authoritative recovery and Pusher presence notifications that
   never contain vote values
@@ -84,7 +91,7 @@ npm run build
 ```
 
 The unit suite covers pointing-scale compatibility, custom agenda sorting,
-finalizable votes,
+finalizable votes, rounded-average recommendations, grooming timers,
 snapshotted voter reveal rules, vote secrecy, permissions, queue progression,
 and OAuth PKCE/state behavior.
 

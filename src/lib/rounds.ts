@@ -25,20 +25,26 @@ export function canFacilitate(role: ParticipantRole): boolean {
   return role === "facilitator";
 }
 
-export function majorityVote(
-  values: readonly number[],
-): number | null {
+export function averageVote(values: readonly number[]): number | null {
   if (values.length === 0) return null;
-  const counts = new Map<number, number>();
-  for (const value of values) {
-    counts.set(value, (counts.get(value) ?? 0) + 1);
-  }
-  const ranked = [...counts.entries()].sort(
-    ([leftValue, leftCount], [rightValue, rightCount]) =>
-      rightCount - leftCount || rightValue - leftValue,
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+export function roundedUpAverageVote(
+  values: readonly number[],
+  availableValues: readonly number[],
+): { average: number; estimate: number } | null {
+  const average = averageVote(values);
+  if (average === null || availableValues.length === 0) return null;
+  const sortedValues = [...new Set(availableValues)].sort(
+    (left, right) => left - right,
   );
-  if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null;
-  return ranked[0][0];
+  return {
+    average,
+    estimate:
+      sortedValues.find((value) => value >= average) ??
+      sortedValues[sortedValues.length - 1],
+  };
 }
 
 export function nextPendingItemId(

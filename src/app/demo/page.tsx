@@ -6,6 +6,10 @@ const demoSnapshot: SessionSnapshot = {
   code: "DEMO2026",
   title: "API grooming · July 30",
   status: "live",
+  startedAt: new Date(Date.now() - 14 * 60_000).toISOString(),
+  endedAt: null,
+  activeStartedAt: new Date(Date.now() - 14 * 60_000).toISOString(),
+  elapsedSeconds: 0,
   teamId: "demo-team",
   teamName: "Platform API",
   scaleType: "linear",
@@ -54,6 +58,8 @@ const demoSnapshot: SessionSnapshot = {
       groomingOutcome: null,
       groomingNote: null,
       decidedAt: null,
+      activeStartedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+      elapsedSeconds: 0,
       linearCreatedAt: "2026-07-21T12:00:00.000Z",
       linearUpdatedAt: "2026-07-29T18:00:00.000Z",
       dueDate: null,
@@ -82,6 +88,8 @@ const demoSnapshot: SessionSnapshot = {
       groomingOutcome: null,
       groomingNote: null,
       decidedAt: null,
+      activeStartedAt: null,
+      elapsedSeconds: 0,
       linearCreatedAt: "2026-07-22T12:00:00.000Z",
       linearUpdatedAt: "2026-07-28T18:00:00.000Z",
       dueDate: null,
@@ -110,6 +118,8 @@ const demoSnapshot: SessionSnapshot = {
       groomingOutcome: null,
       groomingNote: null,
       decidedAt: null,
+      activeStartedAt: null,
+      elapsedSeconds: 0,
       linearCreatedAt: "2026-07-23T12:00:00.000Z",
       linearUpdatedAt: "2026-07-27T18:00:00.000Z",
       dueDate: null,
@@ -126,6 +136,7 @@ const demoSnapshot: SessionSnapshot = {
       online: true,
       hasVoted: false,
       vote: null,
+      signal: null,
     },
     {
       id: "u2",
@@ -137,6 +148,7 @@ const demoSnapshot: SessionSnapshot = {
       online: true,
       hasVoted: true,
       vote: null,
+      signal: null,
     },
     {
       id: "u3",
@@ -148,6 +160,7 @@ const demoSnapshot: SessionSnapshot = {
       online: true,
       hasVoted: false,
       vote: null,
+      signal: null,
     },
     {
       id: "u4",
@@ -159,6 +172,7 @@ const demoSnapshot: SessionSnapshot = {
       online: true,
       hasVoted: false,
       vote: null,
+      signal: null,
     },
   ],
   round: {
@@ -175,16 +189,40 @@ const demoSnapshot: SessionSnapshot = {
 export default async function DemoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ role?: string }>;
+  searchParams: Promise<{ role?: string; state?: string }>;
 }) {
-  const { role } = await searchParams;
+  const { role, state } = await searchParams;
+  const roomSnapshot: SessionSnapshot =
+    state === "draft"
+      ? {
+          ...demoSnapshot,
+          status: "draft",
+          startedAt: null,
+          activeStartedAt: null,
+          elapsedSeconds: 0,
+          activeItemId: null,
+          queue: demoSnapshot.queue.map((item) => ({
+            ...item,
+            status: "pending",
+            activeStartedAt: null,
+            elapsedSeconds: 0,
+          })),
+          participants: demoSnapshot.participants.map((person) => ({
+            ...person,
+            hasVoted: false,
+            vote: null,
+            signal: null,
+          })),
+          round: null,
+        }
+      : demoSnapshot;
   const initialSnapshot =
     role === "voter"
       ? {
-          ...demoSnapshot,
+          ...roomSnapshot,
           currentUserId: "u1",
           currentUserRole: "voter" as const,
         }
-      : demoSnapshot;
+      : roomSnapshot;
   return <LiveRoom demoMode initialSnapshot={initialSnapshot} />;
 }

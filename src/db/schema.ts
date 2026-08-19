@@ -153,6 +153,8 @@ export const pokerSessions = pgTable(
     autoReveal: boolean("auto_reveal").default(true).notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    activeStartedAt: timestamp("active_started_at", { withTimezone: true }),
+    elapsedSeconds: integer("elapsed_seconds").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -215,6 +217,8 @@ export const queueItems = pgTable(
     groomingOutcome: text("grooming_outcome"),
     groomingNote: text("grooming_note"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    activeStartedAt: timestamp("active_started_at", { withTimezone: true }),
+    elapsedSeconds: integer("elapsed_seconds").default(0).notNull(),
     linearCreatedAt: timestamp("linear_created_at", { withTimezone: true }),
     linearUpdatedAt: timestamp("linear_updated_at", { withTimezone: true }),
     dueDate: text("due_date"),
@@ -296,6 +300,23 @@ export const roundVoters = pgTable(
 
 export const votes = pgTable(
   "votes",
+  {
+    roundId: uuid("round_id")
+      .notNull()
+      .references(() => rounds.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    value: text("value").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.roundId, table.userId] })],
+);
+
+export const roundSignals = pgTable(
+  "round_signals",
   {
     roundId: uuid("round_id")
       .notNull()

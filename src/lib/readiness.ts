@@ -39,3 +39,20 @@ export function readinessScore(item: Parameters<typeof readinessChecks>[0]) {
     total: checks.length,
   };
 }
+
+export function contextReadinessScore(
+  item: Pick<SessionQueueItem, "description">,
+) {
+  const checks = readinessChecks({
+    description: item.description,
+    assigneeName: null,
+    projectName: null,
+  }).filter(
+    (check) =>
+      check.id === "description" || check.id === "acceptance-criteria",
+  );
+  return {
+    ready: checks.filter((check) => check.ready).length,
+    total: checks.length,
+  };
+}

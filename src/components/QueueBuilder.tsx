@@ -21,10 +21,12 @@ import {
   ArrowDownAZ,
   Check,
   CirclePlus,
+  Copy,
   GripVertical,
   Search,
   SlidersHorizontal,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -44,7 +46,16 @@ import type {
 import { voteLabel } from "@/lib/estimates";
 import type { LinearIssueFilterOptions } from "@/lib/linear";
 import { sortQueueItems } from "@/lib/queue-sort";
-import { readinessScore } from "@/lib/readiness";
+import { contextReadinessScore, readinessScore } from "@/lib/readiness";
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
 
 function SortableQueueRow({
   item,
@@ -109,6 +120,10 @@ export function QueueBuilder({
 }) {
   const router = useRouter();
   const [queue, setQueue] = useState(initialSnapshot.queue);
+  const [participants, setParticipants] = useState(
+    initialSnapshot.participants,
+  );
+  const [copied, setCopied] = useState(false);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<LinearIssueFilterOptions | null>(null);
   const [results, setResults] = useState<LinearIssueSummary[]>([]);
@@ -122,6 +137,9 @@ export function QueueBuilder({
   const [stateTypes, setStateTypes] = useState(settings.stateTypes);
   const [estimateScope, setEstimateScope] = useState(settings.estimateScope);
   const [assigneeScope, setAssigneeScope] = useState(settings.assigneeScope);
+  const [readinessFilter, setReadinessFilter] = useState<
+    "any" | "ready" | "missing"
+  >("any");
   const [sortPreset, setSortPreset] = useState<QueueSortPreset>(
     settings.defaultSort,
   );
@@ -154,6 +172,27 @@ export function QueueBuilder({
     };
   }, [initialSnapshot.teamId]);
 
+  useEffect(() => {
+    let active = true;
+    const refreshRoster = async () => {
+      try {
+        const response = await fetch(
+          `/api/sessions/${initialSnapshot.id}/snapshot`,
+          { cache: "no-store" },
+        );
+        const data = await response.json();
+        if (active && response.ok) setParticipants(data.snapshot.participants);
+      } catch {
+        // The start action remains available; the next poll will retry.
+      }
+    };
+    const timer = window.setInterval(() => void refreshRoster(), 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [initialSnapshot.id]);
+
   function buildIssueParams(fetchAll = false) {
     return new URLSearchParams({
       teamId: initialSnapshot.teamId,
@@ -167,6 +206,14 @@ export function QueueBuilder({
     });
   }
 
+  function matchesReadinessFilter(issue: LinearIssueSummary) {
+    if (readinessFilter === "any") return true;
+    const score = contextReadinessScore(issue);
+    return readinessFilter === "ready"
+      ? score.ready === score.total
+      : score.ready < score.total;
+  }
+
   async function refreshSnapshot(): Promise<SessionQueueItem[]> {
     const response = await fetch(
       `/api/sessions/${initialSnapshot.id}/snapshot`,
@@ -175,6 +222,7 @@ export function QueueBuilder({
     const data = await response.json();
     if (response.ok) {
       setQueue(data.snapshot.queue);
+      setParticipants(data.snapshot.participants);
       return data.snapshot.queue;
     }
     return queue;
@@ -194,7 +242,8 @@ export function QueueBuilder({
       const queued = new Set(queue.map((item) => item.linearIssueId));
       setResults(
         data.issues.filter(
-          (issue: LinearIssueSummary) => !queued.has(issue.id),
+          (issue: LinearIssueSummary) =>
+            !queued.has(issue.id) && matchesReadinessFilter(issue),
         ),
       );
     } catch (caught) {
@@ -265,7 +314,10 @@ export function QueueBuilder({
 
       const queuedIds = new Set(queue.map((item) => item.linearIssueId));
       const issueIds = (searchData.issues as LinearIssueSummary[])
-        .filter((issue) => !queuedIds.has(issue.id))
+        .filter(
+          (issue) =>
+            !queuedIds.has(issue.id) && matchesReadinessFilter(issue),
+        )
         .slice(0, 1000)
         .map((issue) => issue.id);
       if (!issueIds.length) {
@@ -421,6 +473,10 @@ export function QueueBuilder({
     : null;
   const allResultsSelected =
     results.length > 0 && results.every((issue) => selected.has(issue.id));
+  const fullyReadyCount = queue.filter((item) => {
+    const score = readinessScore(item);
+    return score.ready === score.total;
+  }).length;
 
   async function startSession() {
     setBusy(true);
@@ -436,6 +492,15 @@ export function QueueBuilder({
       return;
     }
     router.push(`/sessions/${initialSnapshot.id}`);
+  }
+
+  async function copyInvite() {
+    const inviteUrl = `${window.location.origin}/s/${initialSnapshot.code}`;
+    await navigator.clipboard.writeText(
+      `Join ${initialSnapshot.title} to point ${queue.length} ${initialSnapshot.teamName} ${queue.length === 1 ? "ticket" : "tickets"}: ${inviteUrl}`,
+    );
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
   }
 
   async function deleteSession() {
@@ -466,6 +531,14 @@ export function QueueBuilder({
           </div>
         </div>
         <div className="prepare-actions">
+          <button
+            className="button button-ghost prepare-share"
+            onClick={() => void copyInvite()}
+            type="button"
+          >
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+            {copied ? "Slack invite copied" : "Copy Slack invite"}
+          </button>
           <button
             aria-label="Delete draft session"
             className="button button-ghost prepare-delete"
@@ -513,7 +586,20 @@ export function QueueBuilder({
           </div>
           <div className="queue-stat">
             <b>{queue.length}</b>
-            <span>issues queued</span>
+            <span>
+              issues queued · {fullyReadyCount} ready
+            </span>
+            <em>
+              <Users size={13} /> {participants.length} joined
+            </em>
+            <div className="prepare-roster" aria-label="People in the room">
+              {participants.slice(0, 6).map((person) => (
+                <span key={person.id} title={person.name}>
+                  {initials(person.name)}
+                </span>
+              ))}
+              {participants.length > 6 && <span>+{participants.length - 6}</span>}
+            </div>
           </div>
         </div>
 
@@ -632,6 +718,21 @@ export function QueueBuilder({
                       <option value="anyone">Anyone</option>
                       <option value="me">Assigned to me</option>
                       <option value="unassigned">Unassigned</option>
+                    </select>
+                  </label>
+                  <label>
+                    Grooming context
+                    <select
+                      onChange={(event) =>
+                        setReadinessFilter(
+                          event.target.value as typeof readinessFilter,
+                        )
+                      }
+                      value={readinessFilter}
+                    >
+                      <option value="any">Any readiness</option>
+                      <option value="ready">Description + criteria ready</option>
+                      <option value="missing">Missing core context</option>
                     </select>
                   </label>
                 </div>
@@ -795,6 +896,7 @@ export function QueueBuilder({
               ) : (
                 results.map((issue) => {
                   const checked = selected.has(issue.id);
+                  const context = contextReadinessScore(issue);
                   return (
                     <button
                       className={`issue-result ${checked ? "selected" : ""}`}
@@ -816,7 +918,8 @@ export function QueueBuilder({
                         <b>{issue.title}</b>
                         <small>
                           {issue.identifier} ·{" "}
-                          {issue.priorityLabel ?? "No priority"}
+                          {issue.priorityLabel ?? "No priority"} · {context.ready}/
+                          {context.total} context
                         </small>
                       </div>
                       <span>

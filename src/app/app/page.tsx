@@ -1,4 +1,5 @@
 import { ArrowRight, LogIn } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Brand } from "@/components/Brand";
@@ -45,10 +46,21 @@ export default async function AppHome({
           >
             <LogIn size={18} /> Continue with Linear <ArrowRight size={18} />
           </a>
+          <Link className="button button-ghost" href="/demo">
+            Try the interactive demo
+          </Link>
           <small>
             Read access is used to show tickets. Session facilitators also grant
             write access so the final estimate can be applied.
           </small>
+          <a
+            className="auth-source-link"
+            href="https://github.com/jcb79107/linear-pointing"
+            rel="noreferrer"
+            target="_blank"
+          >
+            Review the open-source code and data flow
+          </a>
         </section>
       </main>
     );
