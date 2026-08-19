@@ -19,9 +19,8 @@ describe("live queue editing", () => {
     expect(canClearQueue("ended")).toBe(false);
   });
 
-  it("allows pending and skipped tickets to be removed while live", () => {
+  it("allows pending tickets to be removed while live", () => {
     expect(queueItemRemovalError("live", "pending")).toBeNull();
-    expect(queueItemRemovalError("live", "skipped")).toBeNull();
   });
 
   it("protects the active ticket and completed history", () => {
@@ -29,7 +28,10 @@ describe("live queue editing", () => {
       "The active ticket cannot be removed",
     );
     expect(queueItemRemovalError("live", "estimated")).toBe(
-      "Completed tickets stay in the session history",
+      "Discussed tickets stay in the session history",
+    );
+    expect(queueItemRemovalError("live", "skipped")).toBe(
+      "Discussed tickets stay in the session history",
     );
   });
 

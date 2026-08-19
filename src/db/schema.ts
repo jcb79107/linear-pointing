@@ -212,6 +212,9 @@ export const queueItems = pgTable(
     status: queueStatusEnum("status").default("pending").notNull(),
     currentEstimate: integer("current_estimate"),
     finalEstimate: integer("final_estimate"),
+    groomingOutcome: text("grooming_outcome"),
+    groomingNote: text("grooming_note"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
     linearCreatedAt: timestamp("linear_created_at", { withTimezone: true }),
     linearUpdatedAt: timestamp("linear_updated_at", { withTimezone: true }),
     dueDate: text("due_date"),
@@ -241,6 +244,7 @@ export const participants = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: participantRoleEnum("role").default("voter").notNull(),
+    votingEnabled: boolean("voting_enabled").default(true).notNull(),
     joinedAt: timestamp("joined_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

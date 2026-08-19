@@ -44,9 +44,10 @@ describe("round behavior", () => {
     expect(canFacilitate("voter")).toBe(false);
   });
 
-  it("recommends the most common vote and resolves ties upward", () => {
+  it("recommends a unique most common vote and leaves ties to discussion", () => {
     expect(majorityVote([1, 2, 2, 3])).toBe(2);
-    expect(majorityVote([1, 1, 3, 3])).toBe(3);
+    expect(majorityVote([1, 1, 3, 3])).toBeNull();
+    expect(majorityVote([1, 2, 3])).toBeNull();
     expect(majorityVote([])).toBeNull();
   });
 

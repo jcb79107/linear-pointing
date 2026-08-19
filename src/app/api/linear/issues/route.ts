@@ -4,6 +4,7 @@ import { requireCurrentUser } from "@/lib/auth";
 import { apiError } from "@/lib/http";
 import {
   getLinearIssueFilterOptions,
+  searchLinearCustomViewIssues,
   searchLinearIssues,
 } from "@/lib/linear";
 
@@ -13,6 +14,7 @@ const querySchema = z.object({
   cycleId: z.string().optional(),
   projectId: z.string().optional(),
   labelId: z.string().optional(),
+  customViewId: z.string().optional(),
   all: z.enum(["true", "false"]).optional(),
   cycleScope: z.enum(["upcoming", "active", "any"]).default("any"),
   stateTypes: z.string().default("unstarted"),
@@ -35,12 +37,17 @@ export async function GET(request: Request) {
         ["backlog", "unstarted", "started"].includes(value),
       );
     if (!stateTypes.length) {
-      return Response.json({ error: "Choose at least one Linear status" }, { status: 400 });
+      return Response.json(
+        { error: "Choose at least one Linear status" },
+        { status: 400 },
+      );
     }
     const cycleOptions =
       input.cycleScope === "any"
         ? null
-        : await getLinearIssueFilterOptions(user.id, input.teamId);
+        : await getLinearIssueFilterOptions(user.id, input.teamId, {
+            includeCustomViews: false,
+          });
     const selectedCycle =
       input.cycleScope === "upcoming"
         ? cycleOptions?.upcomingCycle
@@ -51,21 +58,28 @@ export async function GET(request: Request) {
       return Response.json({ issues: [], selectedCycle: null });
     }
     const fetchAll = input.all === "true";
-    const issues = await searchLinearIssues(
-      user.id,
-      {
-        teamId: input.teamId,
-        query: input.query,
-        cycleId: selectedCycle?.id ?? input.cycleId,
-        projectId: input.projectId,
-        labelId: input.labelId,
-        stateTypes,
-        estimateScope: input.estimateScope,
-        assigneeScope: input.assigneeScope,
-        assigneeId: user.linearUserId,
-      },
-      { fetchAll, preserveManualOrder: fetchAll },
-    );
+    const filters = {
+      teamId: input.teamId,
+      query: input.query,
+      cycleId: selectedCycle?.id ?? input.cycleId,
+      projectId: input.projectId,
+      labelId: input.labelId,
+      stateTypes,
+      estimateScope: input.estimateScope,
+      assigneeScope: input.assigneeScope,
+      assigneeId: user.linearUserId,
+    };
+    const issues = input.customViewId
+      ? await searchLinearCustomViewIssues(
+          user.id,
+          input.customViewId,
+          filters,
+          { fetchAll },
+        )
+      : await searchLinearIssues(user.id, filters, {
+          fetchAll,
+          preserveManualOrder: fetchAll,
+        });
     return Response.json({ issues, selectedCycle });
   } catch (error) {
     return apiError(error);

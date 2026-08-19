@@ -7,8 +7,6 @@ const variables = [
   "DATABASE_URL",
   "LINEAR_CLIENT_ID",
   "TOKEN_ENCRYPTION_KEY",
-  "PUSHER_APP_ID / KEY / SECRET / CLUSTER",
-  "SLACK_INVITE_WEBHOOK_URL (optional)",
 ];
 
 export default function SetupPage() {
@@ -39,8 +37,8 @@ export default function SetupPage() {
         <div className="step-label">LOCAL SETUP</div>
         <h1>Connect the app.</h1>
         <p className="setup-lede">
-          Linear Pointing needs Linear for identity and issues, Neon for room
-          state, and Pusher for private live updates.
+          Linear Pointing needs Linear for identity and issues and Postgres for
+          durable room state. Pusher is optional for faster live updates.
         </p>
         <ol className="setup-steps">
           <li>
@@ -63,14 +61,10 @@ export default function SetupPage() {
           <li>
             <span>2</span>
             <div>
-              <b>Create Neon and Pusher projects</b>
+              <b>Create a Postgres database</b>
               <p>
-                Use Neon&apos;s pooled connection string. Create a Pusher
-                Channels app in the closest region.
-              </p>
-              <p>
-                To send invites with one click, add an incoming webhook for
-                your team&apos;s Slack channel.
+                Neon&apos;s free tier and pooled connection string are a simple
+                default. Any compatible Postgres database works.
               </p>
             </div>
           </li>

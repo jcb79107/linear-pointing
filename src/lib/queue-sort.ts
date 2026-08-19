@@ -4,11 +4,16 @@ import type {
   SessionQueueItem,
 } from "@/lib/domain";
 
-function compareNullableNumbers(left: number | null, right: number | null) {
+function compareNullableNumbers(
+  left: number | null,
+  right: number | null,
+  direction: QueueSortRule["direction"],
+) {
   if (left === right) return 0;
   if (left === null) return 1;
   if (right === null) return -1;
-  return left - right;
+  const comparison = left - right;
+  return direction === "desc" ? comparison * -1 : comparison;
 }
 
 function issueNumber(identifier: string): number {
@@ -26,21 +31,20 @@ function compareRule(
     case "priority": {
       const leftPriority = left.priority || null;
       const rightPriority = right.priority || null;
-      comparison = compareNullableNumbers(leftPriority, rightPriority);
-      break;
+      return compareNullableNumbers(leftPriority, rightPriority, rule.direction);
     }
     case "createdAt":
-      comparison = compareNullableNumbers(
+      return compareNullableNumbers(
         left.linearCreatedAt ? Date.parse(left.linearCreatedAt) : null,
         right.linearCreatedAt ? Date.parse(right.linearCreatedAt) : null,
+        rule.direction,
       );
-      break;
     case "updatedAt":
-      comparison = compareNullableNumbers(
+      return compareNullableNumbers(
         left.linearUpdatedAt ? Date.parse(left.linearUpdatedAt) : null,
         right.linearUpdatedAt ? Date.parse(right.linearUpdatedAt) : null,
+        rule.direction,
       );
-      break;
     case "identifier":
       comparison = issueNumber(left.identifier) - issueNumber(right.identifier);
       break;
@@ -48,8 +52,11 @@ function compareRule(
       comparison = left.title.localeCompare(right.title);
       break;
     case "estimate":
-      comparison = compareNullableNumbers(left.currentEstimate, right.currentEstimate);
-      break;
+      return compareNullableNumbers(
+        left.currentEstimate,
+        right.currentEstimate,
+        rule.direction,
+      );
   }
   return rule.direction === "desc" ? comparison * -1 : comparison;
 }

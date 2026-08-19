@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import Pusher from "pusher-js";
+import type Pusher from "pusher-js";
 import {
   ArrowLeft,
   Check,
@@ -16,8 +16,11 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
-  Send,
   SkipForward,
+  PauseCircle,
+  ListChecks,
+  MessageSquareText,
+  Scissors,
   Trash2,
   Users,
   X,
@@ -33,10 +36,12 @@ import { Brand } from "@/components/Brand";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { requestJson } from "@/lib/client-request";
 import type {
+  GroomingOutcome,
   LinearIssueSummary,
   ParticipantRole,
   SessionParticipant,
   SessionSnapshot,
+  UserSettings,
   VoteValue,
 } from "@/lib/domain";
 import { voteLabel } from "@/lib/estimates";
@@ -47,17 +52,28 @@ import {
   isFigmaUrl,
 } from "@/lib/figma";
 import { majorityVote } from "@/lib/rounds";
+import { readinessChecks } from "@/lib/readiness";
 
 interface LiveRoomProps {
   initialSnapshot: SessionSnapshot;
   demoMode?: boolean;
-  slackInviteChannel?: string;
+  intakeDefaults?: Pick<
+    UserSettings,
+    "cycleScope" | "stateTypes" | "estimateScope" | "assigneeScope"
+  >;
 }
 
 interface RoomApiResponse {
   error?: string;
   snapshot?: SessionSnapshot;
 }
+
+const defaultIntakeDefaults: NonNullable<LiveRoomProps["intakeDefaults"]> = {
+  cycleScope: "any",
+  stateTypes: ["unstarted"],
+  estimateScope: "unestimated",
+  assigneeScope: "anyone",
+};
 
 function initials(name: string) {
   return name
@@ -128,10 +144,29 @@ function optimisticVote(
   };
 }
 
+function localRound(
+  snapshot: SessionSnapshot,
+  queueItemId: string,
+): NonNullable<SessionSnapshot["round"]> {
+  return {
+    id: `demo-round-${queueItemId}`,
+    number: 1,
+    status: "voting",
+    eligibleVoterIds: snapshot.participants
+      .filter((person) => person.votingEnabled)
+      .map((person) => person.id),
+    estimateAtStart:
+      snapshot.queue.find((item) => item.id === queueItemId)?.currentEstimate ??
+      null,
+    revealedAt: null,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 export function LiveRoom({
   initialSnapshot,
   demoMode = false,
-  slackInviteChannel = "the configured Slack channel",
+  intakeDefaults = defaultIntakeDefaults,
 }: LiveRoomProps) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -144,9 +179,7 @@ export function LiveRoom({
     "connected" | "reconnecting" | "offline"
   >("connected");
   const [copied, setCopied] = useState(false);
-  const [slackBusy, setSlackBusy] = useState(false);
-  const [slackSent, setSlackSent] = useState(false);
-  const [slackConfirmOpen, setSlackConfirmOpen] = useState(false);
+  const [decisionNote, setDecisionNote] = useState("");
   const [addIssueOpen, setAddIssueOpen] = useState(false);
   const [addIssueQuery, setAddIssueQuery] = useState("");
   const [addIssueResults, setAddIssueResults] = useState<
@@ -167,7 +200,7 @@ export function LiveRoom({
       }
     | null
   >(null);
-  const [onlineIds, setOnlineIds] = useState<Set<string>>(
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(() =>
     new Set(
       initialSnapshot.participants
         .filter((person) => person.online)
@@ -175,6 +208,13 @@ export function LiveRoom({
     ),
   );
   const refreshInFlight = useRef<Promise<boolean> | null>(null);
+  const addIssueDialogRef = useRef<HTMLElement>(null);
+  const addIssueReturnFocusRef = useRef<HTMLElement | null>(null);
+  const addIssueBusyRef = useRef(false);
+
+  useEffect(() => {
+    addIssueBusyRef.current = Boolean(addingIssueId) || addIssueSearching;
+  }, [addIssueSearching, addingIssueId]);
 
   const refresh = useCallback(async (): Promise<boolean> => {
     if (demoMode) return true;
@@ -223,43 +263,48 @@ export function LiveRoom({
     const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
     let pusher: Pusher | null = null;
 
+    let cancelled = false;
     if (key && cluster) {
-      pusher = new Pusher(key, {
-        cluster,
-        channelAuthorization: {
-          endpoint: "/api/pusher/auth",
-          transport: "ajax",
-        },
+      void import("pusher-js").then(({ default: PusherClient }) => {
+        if (cancelled) return;
+        pusher = new PusherClient(key, {
+          cluster,
+          channelAuthorization: {
+            endpoint: "/api/pusher/auth",
+            transport: "ajax",
+          },
+        });
+        pusher.connection.bind("connected", () => void refresh());
+        const channel = pusher.subscribe(
+          `presence-session-${initialSnapshot.id}`,
+        );
+        channel.bind("session-changed", () => void refresh());
+        channel.bind("pusher:subscription_succeeded", (members: {
+          each: (callback: (member: { id: string }) => void) => void;
+        }) => {
+          const next = new Set<string>();
+          members.each((member) => next.add(member.id));
+          setOnlineIds(next);
+        });
+        channel.bind(
+          "pusher:member_added",
+          (member: { id: string }) =>
+            setOnlineIds((current) => new Set(current).add(member.id)),
+        );
+        channel.bind(
+          "pusher:member_removed",
+          (member: { id: string }) =>
+            setOnlineIds((current) => {
+              const next = new Set(current);
+              next.delete(member.id);
+              return next;
+            }),
+        );
       });
-      pusher.connection.bind("connected", () => void refresh());
-      const channel = pusher.subscribe(
-        `presence-session-${initialSnapshot.id}`,
-      );
-      channel.bind("session-changed", () => void refresh());
-      channel.bind("pusher:subscription_succeeded", (members: {
-        each: (callback: (member: { id: string }) => void) => void;
-      }) => {
-        const next = new Set<string>();
-        members.each((member) => next.add(member.id));
-        setOnlineIds(next);
-      });
-      channel.bind(
-        "pusher:member_added",
-        (member: { id: string }) =>
-          setOnlineIds((current) => new Set(current).add(member.id)),
-      );
-      channel.bind(
-        "pusher:member_removed",
-        (member: { id: string }) =>
-          setOnlineIds((current) => {
-            const next = new Set(current);
-            next.delete(member.id);
-            return next;
-          }),
-      );
     }
 
     return () => {
+      cancelled = true;
       window.clearInterval(timer);
       window.removeEventListener("online", recover);
       window.removeEventListener("offline", recover);
@@ -270,6 +315,35 @@ export function LiveRoom({
     };
   }, [demoMode, initialSnapshot.id, refresh]);
 
+  useEffect(() => {
+    if (!addIssueOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !addIssueBusyRef.current) {
+        setAddIssueOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = addIssueDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      addIssueReturnFocusRef.current?.focus();
+    };
+  }, [addIssueOpen]);
+
   const activeItem = snapshot.queue.find(
     (item) => item.id === snapshot.activeItemId,
   );
@@ -278,18 +352,16 @@ export function LiveRoom({
   );
   const isFacilitator = snapshot.currentUserRole === "facilitator";
   const isEligibleVoter =
-    snapshot.currentUserRole === "voter" &&
-    Boolean(
-      snapshot.round?.eligibleVoterIds.includes(snapshot.currentUserId),
-    );
-  const canVote =
-    snapshot.round?.status === "voting" &&
-    isEligibleVoter;
+    Boolean(snapshot.round?.eligibleVoterIds.includes(snapshot.currentUserId));
+  const canVote = snapshot.round?.status === "voting" && isEligibleVoter;
   const revealed =
     snapshot.round?.status === "revealed" ||
     snapshot.round?.status === "finalized";
   const completed = snapshot.queue.filter(
-    (item) => item.status === "estimated",
+    (item) =>
+      item.groomingOutcome !== null ||
+      item.status === "estimated" ||
+      item.status === "skipped",
   ).length;
   const attachedFigmaDesigns =
     activeItem?.attachments?.filter(
@@ -328,6 +400,13 @@ export function LiveRoom({
     (participant) => participant.hasVoted,
   ).length;
   const eligibleVoterCount = snapshot.round?.eligibleVoterIds.length ?? 0;
+  const revealedVotes = eligibleParticipants
+    .map((participant) => participant.vote)
+    .filter((vote): vote is number => vote !== null);
+  const voteSpread = revealedVotes.length
+    ? `${Math.min(...revealedVotes)}–${Math.max(...revealedVotes)}`
+    : null;
+  const readiness = activeItem ? readinessChecks(activeItem) : [];
   const normalizedAddIssueQuery = addIssueQuery.trim().toLowerCase();
   const addQueuedMatch = normalizedAddIssueQuery
     ? snapshot.queue.find(
@@ -389,8 +468,8 @@ export function LiveRoom({
     payload: Record<string, unknown> = {},
   ) {
     setSnapshot((current) => {
-      if (!current.round) return current;
       if (action === "reveal") {
+        if (!current.round) return current;
         return {
           ...current,
           round: {
@@ -410,6 +489,7 @@ export function LiveRoom({
         };
       }
       if (action === "revote") {
+        if (!current.round) return current;
         return {
           ...current,
           round: {
@@ -427,8 +507,10 @@ export function LiveRoom({
       }
       if (action === "activate") {
         const queueItemId = String(payload.queueItemId);
+        const round = localRound(current, queueItemId);
         return {
           ...current,
+          status: "live",
           activeItemId: queueItemId,
           queue: current.queue.map((item) => ({
             ...item,
@@ -438,13 +520,12 @@ export function LiveRoom({
                 : item.status === "active"
                   ? "pending"
                   : item.status,
+            finalEstimate: item.id === queueItemId ? null : item.finalEstimate,
+            groomingOutcome: item.id === queueItemId ? null : item.groomingOutcome,
+            groomingNote: item.id === queueItemId ? null : item.groomingNote,
+            decidedAt: item.id === queueItemId ? null : item.decidedAt,
           })),
-          round: {
-            ...current.round,
-            number: 1,
-            status: "voting",
-            revealedAt: null,
-          },
+          round,
           participants: current.participants.map((person) => ({
             ...person,
             vote: null,
@@ -453,13 +534,31 @@ export function LiveRoom({
         };
       }
       if (action === "participant-role") {
+        const votingEnabled = Boolean(payload.votingEnabled);
+        const participantUserId = String(payload.participantUserId);
+        const eligibleVoterIds = current.round
+          ? votingEnabled
+            ? [...new Set([...current.round.eligibleVoterIds, participantUserId])]
+            : current.round.eligibleVoterIds.filter(
+                (userId) => userId !== participantUserId,
+              )
+          : [];
         return {
           ...current,
           participants: current.participants.map((person) =>
-            person.id === payload.participantUserId
-              ? { ...person, role: payload.role as ParticipantRole }
+            person.id === participantUserId
+              ? {
+                  ...person,
+                  role: payload.role as ParticipantRole,
+                  votingEnabled,
+                  hasVoted: votingEnabled ? person.hasVoted : false,
+                  vote: votingEnabled ? person.vote : null,
+                }
               : person,
           ),
+          round: current.round
+            ? { ...current.round, eligibleVoterIds }
+            : null,
         };
       }
       if (action === "finalize") {
@@ -487,21 +586,77 @@ export function LiveRoom({
               item.id === current.activeItemId
                 ? Number(payload.estimate)
                 : item.finalEstimate,
+            groomingOutcome:
+              item.id === current.activeItemId ? "ready" : item.groomingOutcome,
+            groomingNote:
+              item.id === current.activeItemId
+                ? String(payload.note || "") || null
+                : item.groomingNote,
+            decidedAt:
+              item.id === current.activeItemId
+                ? new Date().toISOString()
+                : item.decidedAt,
           })),
-          round: next
-            ? {
-                ...current.round,
-                id: `demo-round-${next.id}`,
-                number: 1,
-                status: "voting",
-                revealedAt: null,
-              }
-            : null,
+          round: next ? localRound(current, next.id) : null,
           participants: current.participants.map((person) => ({
             ...person,
             vote: null,
             hasVoted: false,
           })),
+        };
+      }
+      if (action === "outcome") {
+        const currentActive = current.queue.find(
+          (item) => item.id === current.activeItemId,
+        );
+        const next = current.queue.find(
+          (item) =>
+            item.position > (currentActive?.position ?? -1) &&
+            item.status === "pending",
+        );
+        return {
+          ...current,
+          status: next ? "live" : "ended",
+          activeItemId: next?.id ?? null,
+          queue: current.queue.map((item) => ({
+            ...item,
+            status:
+              item.id === current.activeItemId
+                ? "skipped"
+                : item.id === next?.id
+                  ? "active"
+                  : item.status,
+            groomingOutcome:
+              item.id === current.activeItemId
+                ? (payload.outcome as GroomingOutcome)
+                : item.groomingOutcome,
+            groomingNote:
+              item.id === current.activeItemId
+                ? String(payload.note || "") || null
+                : item.groomingNote,
+            decidedAt:
+              item.id === current.activeItemId
+                ? new Date().toISOString()
+                : item.decidedAt,
+          })),
+          round: next ? localRound(current, next.id) : null,
+          participants: current.participants.map((person) => ({
+            ...person,
+            vote: null,
+            hasVoted: false,
+          })),
+        };
+      }
+      if (action === "finish") {
+        return {
+          ...current,
+          status: "ended",
+          activeItemId: null,
+          queue: current.queue.map((item) => ({
+            ...item,
+            status: item.status === "active" ? "pending" : item.status,
+          })),
+          round: null,
         };
       }
       if (action === "skip") {
@@ -539,6 +694,10 @@ export function LiveRoom({
     setError(null);
     if (demoMode) {
       demoAction(actionName, payload);
+      if (["activate", "finalize", "outcome", "finish"].includes(actionName)) {
+        setDecisionNote("");
+        setFinalEstimate(null);
+      }
       return;
     }
     setBusy(true);
@@ -569,6 +728,10 @@ export function LiveRoom({
           throw new Error(data.error ?? "Could not update the session");
         }
         if (data.snapshot) {
+          if (data.snapshot.activeItemId !== snapshot.activeItemId) {
+            setDecisionNote("");
+            setFinalEstimate(null);
+          }
           setSnapshot(data.snapshot);
           setSyncState("connected");
         } else {
@@ -632,33 +795,6 @@ export function LiveRoom({
     window.setTimeout(() => setCopied(false), 1800);
   }
 
-  async function sendInviteToSlack() {
-    if (demoMode) return;
-    setError(null);
-    setSlackBusy(true);
-    try {
-      const response = await fetch(
-        `/api/sessions/${snapshot.id}/slack-invite`,
-        { method: "POST" },
-      );
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error ?? "Could not send the Slack invite");
-      }
-      setSlackConfirmOpen(false);
-      setSlackSent(true);
-      window.setTimeout(() => setSlackSent(false), 2200);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not send the Slack invite",
-      );
-    } finally {
-      setSlackBusy(false);
-    }
-  }
-
   async function deleteSession() {
     if (demoMode) return;
     setBusy(true);
@@ -691,6 +827,10 @@ export function LiveRoom({
     try {
       const params = new URLSearchParams({
         teamId: snapshot.teamId,
+        cycleScope: intakeDefaults.cycleScope,
+        stateTypes: intakeDefaults.stateTypes.join(","),
+        estimateScope: intakeDefaults.estimateScope,
+        assigneeScope: intakeDefaults.assigneeScope,
         ...(searchQuery.trim() ? { query: searchQuery.trim() } : {}),
       });
       const response = await fetch(`/api/linear/issues?${params}`);
@@ -716,6 +856,7 @@ export function LiveRoom({
   }
 
   function openAddIssue() {
+    addIssueReturnFocusRef.current = document.activeElement as HTMLElement | null;
     setAddIssueQuery("");
     setAddIssueResults([]);
     setAddIssueHasSearched(false);
@@ -731,8 +872,8 @@ export function LiveRoom({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           issueIds: [issue.id],
-          stateTypes: ["unstarted"],
-          estimateScope: "unestimated",
+          stateTypes: intakeDefaults.stateTypes,
+          estimateScope: intakeDefaults.estimateScope,
         }),
       });
       const data = await response.json();
@@ -795,7 +936,7 @@ export function LiveRoom({
         </div>
         <div className="room-progress">
           <span>
-            {completed} / {snapshot.queue.length} pointed
+            {completed} / {snapshot.queue.length} decided
           </span>
           <div>
             <i
@@ -825,19 +966,14 @@ export function LiveRoom({
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? "Copied" : "Copy link"}
           </button>
-          {isFacilitator && !demoMode && (
+          {isFacilitator && snapshot.status === "live" && (
             <button
-              className="slack-invite-button"
-              disabled={slackBusy}
-              onClick={() => setSlackConfirmOpen(true)}
+              className="finish-session-button"
+              disabled={busy}
+              onClick={() => void action("finish")}
               type="button"
             >
-              {slackSent ? <Check size={15} /> : <Send size={15} />}
-              {slackBusy
-                ? "Sending…"
-                : slackSent
-                  ? "Sent"
-                  : "Send to Slack"}
+              <PauseCircle size={15} /> Finish for now
             </button>
           )}
           {isFacilitator && !demoMode && (
@@ -871,65 +1007,6 @@ export function LiveRoom({
         </div>
       )}
 
-      {slackConfirmOpen && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !slackBusy) {
-              setSlackConfirmOpen(false);
-            }
-          }}
-        >
-          <section
-            aria-labelledby="slack-confirm-title"
-            aria-modal="true"
-            className="slack-confirm-modal"
-            role="dialog"
-          >
-            <div className="slack-confirm-icon">
-              <Send size={20} />
-            </div>
-            <div>
-              <h2 id="slack-confirm-title">Send invite to Slack?</h2>
-              <p>
-                This will post the session invitation to{" "}
-                <b>{slackInviteChannel}</b>.
-              </p>
-            </div>
-            <div className="slack-message-preview">
-              <b>Pointing session ready: {snapshot.title}</b>
-              <span>
-                {snapshot.queue.length}{" "}
-                {snapshot.queue.length === 1 ? "ticket" : "tickets"} ·{" "}
-                {snapshot.teamName}
-              </span>
-              <span className="slack-preview-link">
-                Join the pointing session
-              </span>
-            </div>
-            <div className="slack-confirm-actions">
-              <button
-                className="button button-ghost"
-                disabled={slackBusy}
-                onClick={() => setSlackConfirmOpen(false)}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="button button-primary"
-                disabled={slackBusy}
-                onClick={sendInviteToSlack}
-                type="button"
-              >
-                <Send size={15} />
-                {slackBusy ? "Sending…" : "Send invite"}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-
       {addIssueOpen && (
         <div
           className="modal-backdrop"
@@ -947,6 +1024,7 @@ export function LiveRoom({
             aria-labelledby="add-issue-title"
             aria-modal="true"
             className="issue-picker-modal"
+            ref={addIssueDialogRef}
             role="dialog"
           >
             <div className="issue-picker-heading">
@@ -1011,7 +1089,7 @@ export function LiveRoom({
                       ? `${addQueuedMatch.identifier} is already part of this session.`
                       : addIssueHasSearched
                         ? "Try another title or ticket ID."
-                        : "Search by title or ticket ID. Only unpointed Todo tickets are shown."}
+                        : "Search by title or ticket ID using your saved ticket filters."}
                   </p>
                 </div>
               ) : (
@@ -1095,7 +1173,7 @@ export function LiveRoom({
               const canRemove =
                 isFacilitator &&
                 !demoMode &&
-                (item.status === "pending" || item.status === "skipped");
+                item.status === "pending";
               return (
                 <div className="room-ticket-row" key={item.id}>
                   <button
@@ -1107,7 +1185,13 @@ export function LiveRoom({
                     type="button"
                   >
                     <span className="ticket-index">
-                      {item.status === "estimated" ? (
+                      {item.groomingOutcome === "needs-work" ? (
+                        <MessageSquareText size={15} />
+                      ) : item.groomingOutcome === "split" ? (
+                        <Scissors size={15} />
+                      ) : item.groomingOutcome === "parked" ? (
+                        <PauseCircle size={15} />
+                      ) : item.status === "estimated" ? (
                         <CheckCircle2 size={15} />
                       ) : (
                         String(index + 1).padStart(2, "0")
@@ -1119,6 +1203,9 @@ export function LiveRoom({
                         {item.identifier}
                         {item.finalEstimate !== null
                           ? ` · ${voteLabel(item.finalEstimate, snapshot.estimateCards)}`
+                          : ""}
+                        {item.groomingOutcome && item.groomingOutcome !== "ready"
+                          ? ` · ${groomingOutcomeLabel(item.groomingOutcome)}`
                           : ""}
                       </small>
                     </div>
@@ -1195,6 +1282,23 @@ export function LiveRoom({
                     <span>Owner · {activeItem.assigneeName}</span>
                   )}
                 </div>
+                <section className="readiness-panel" aria-label="Grooming readiness">
+                  <div>
+                    <ListChecks size={16} />
+                    <b>Ready to discuss</b>
+                    <span>
+                      {readiness.filter((check) => check.ready).length}/{readiness.length}
+                    </span>
+                  </div>
+                  <div className="readiness-checks">
+                    {readiness.map((check) => (
+                      <span className={check.ready ? "ready" : "missing"} key={check.id}>
+                        {check.ready ? <Check size={12} /> : <X size={12} />}
+                        {check.label}
+                      </span>
+                    ))}
+                  </div>
+                </section>
                 {figmaAttachments.length > 0 && (
                   <section className="figma-designs">
                     <div className="section-label">Figma</div>
@@ -1297,9 +1401,29 @@ export function LiveRoom({
                     {eligibleVoterCount === 0
                       ? `Round ${snapshot.round?.number ?? "—"} · No voters yet`
                       : `Round ${snapshot.round?.number ?? "—"} · ${submittedVoteCount}/${eligibleVoterCount} ready`}
+                    {snapshot.round && <RoundTimer startedAt={snapshot.round.createdAt} />}
                   </span>
                 </div>
-                {isFacilitator ? (
+                {isEligibleVoter ? (
+                  <div className="vote-cards">
+                    {snapshot.estimateCards.map((card) => (
+                      <button
+                        className={
+                          me?.hasVoted && me.vote === card.value
+                            ? "selected"
+                            : ""
+                        }
+                        aria-pressed={me?.hasVoted && me.vote === card.value}
+                        disabled={!canVote || voteBusy}
+                        key={card.value}
+                        onClick={() => void vote(card.value)}
+                        type="button"
+                      >
+                        {card.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : isFacilitator ? (
                   <div
                     className={`facilitator-wait ${eligibleVoterCount === 0 ? "no-voters" : ""}`}
                   >
@@ -1325,26 +1449,6 @@ export function LiveRoom({
                       </button>
                     )}
                   </div>
-                ) : isEligibleVoter ? (
-                  <div className="vote-cards">
-                    {snapshot.estimateCards.map((card) => (
-                      <button
-                        className={
-                          me?.hasVoted &&
-                          me.vote === card.value
-                            ? "selected"
-                            : ""
-                        }
-                        aria-pressed={me?.hasVoted && me.vote === card.value}
-                        disabled={!canVote || voteBusy}
-                        key={card.value}
-                        onClick={() => void vote(card.value)}
-                        type="button"
-                      >
-                        {card.label}
-                      </button>
-                    ))}
-                  </div>
                 ) : (
                   <div className="facilitator-wait observer-wait">
                     <Eye size={18} />
@@ -1357,20 +1461,13 @@ export function LiveRoom({
               </div>
             </>
           ) : (
-            <div className="session-complete">
-              <span>
-                <Check size={26} />
-              </span>
-              <p className="step-label">SESSION COMPLETE</p>
-              <h1>That’s the queue.</h1>
-              <p>
-                {completed} estimates were confirmed and the room can be safely
-                closed.
-              </p>
-              <Link className="button button-dark" href="/app">
-                Back to sessions
-              </Link>
-            </div>
+            <SessionSummary
+              cards={snapshot.estimateCards}
+              isFacilitator={isFacilitator}
+              items={snapshot.queue}
+              onResume={(queueItemId) => void action("activate", { queueItemId })}
+              title={snapshot.title}
+            />
           )}
         </section>
 
@@ -1387,11 +1484,12 @@ export function LiveRoom({
                 cards={snapshot.estimateCards}
                 isFacilitator={isFacilitator}
                 key={person.id}
-                onRole={(role) =>
+                onRole={(role, votingEnabled) =>
                   void action("participant-role", {
                     participantUserId: person.id,
                     role,
-                    addToCurrentRound: role !== "observer",
+                    votingEnabled,
+                    addToCurrentRound: votingEnabled,
                   })
                 }
                 online={demoMode || onlineIds.has(person.id)}
@@ -1413,6 +1511,7 @@ export function LiveRoom({
                         : suggestedFinalEstimate === null
                           ? "Choose after discussion"
                           : "Most common vote selected"}
+                      {voteSpread && ` · spread ${voteSpread}`}
                     </small>
                   </div>
                   <div className="final-values">
@@ -1434,25 +1533,6 @@ export function LiveRoom({
                       </button>
                     ))}
                   </div>
-                  <button
-                    className="button button-primary finalize-button"
-                    disabled={selectedFinalEstimate === null || busy}
-                    onClick={() =>
-                      void action("finalize", {
-                        estimate: selectedFinalEstimate,
-                      })
-                    }
-                    type="button"
-                  >
-                    Set estimate &amp; next <SkipForward size={15} />
-                  </button>
-                  <button
-                    className="text-action"
-                    onClick={() => void action("revote")}
-                    type="button"
-                  >
-                    <RotateCcw size={14} /> Start another round
-                  </button>
                 </>
               ) : (
                 <>
@@ -1467,20 +1547,221 @@ export function LiveRoom({
                       ? "Set estimate without votes"
                       : "Reveal early"}
                   </button>
+                </>
+              )}
+              <label className="decision-note">
+                <span>
+                  <MessageSquareText size={14} /> Decision note
+                </span>
+                <textarea
+                  maxLength={2000}
+                  onChange={(event) => setDecisionNote(event.target.value)}
+                  placeholder="Optional. Notes are added to the Linear issue."
+                  rows={3}
+                  value={decisionNote}
+                />
+              </label>
+              {revealed && (
+                <>
                   <button
-                    className="text-action"
-                    onClick={() => void action("skip")}
+                    className="button button-primary finalize-button"
+                    disabled={selectedFinalEstimate === null || busy}
+                    onClick={() =>
+                      void action("finalize", {
+                        estimate: selectedFinalEstimate,
+                        note: decisionNote,
+                      })
+                    }
                     type="button"
                   >
-                    <SkipForward size={14} /> Skip for now
+                    Estimate &amp; mark ready <SkipForward size={15} />
+                  </button>
+                  <button
+                    className="text-action"
+                    disabled={busy}
+                    onClick={() => void action("revote")}
+                    type="button"
+                  >
+                    <RotateCcw size={14} /> Start another round
                   </button>
                 </>
               )}
+              <div className="grooming-outcomes">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void action("outcome", {
+                      outcome: "needs-work",
+                      note: decisionNote,
+                    })
+                  }
+                  type="button"
+                >
+                  <MessageSquareText size={14} /> Needs details
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void action("outcome", {
+                      outcome: "split",
+                      note: decisionNote,
+                    })
+                  }
+                  type="button"
+                >
+                  <Scissors size={14} /> Split
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void action("outcome", {
+                      outcome: "parked",
+                      note: decisionNote,
+                    })
+                  }
+                  type="button"
+                >
+                  <PauseCircle size={14} /> Park
+                </button>
+              </div>
             </div>
           )}
         </aside>
       </section>
     </main>
+  );
+}
+
+function RoundTimer({ startedAt }: { startedAt: string }) {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds =
+    now === null
+      ? 0
+      : Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return (
+    <small className="round-timer">
+      {minutes}:{String(seconds % 60).padStart(2, "0")}
+    </small>
+  );
+}
+
+function groomingOutcomeLabel(outcome: GroomingOutcome | null) {
+  switch (outcome) {
+    case "ready":
+      return "Ready";
+    case "needs-work":
+      return "Needs details";
+    case "split":
+      return "Split";
+    case "parked":
+      return "Parked";
+    default:
+      return "Not discussed";
+  }
+}
+
+function SessionSummary({
+  items,
+  cards,
+  title,
+  isFacilitator,
+  onResume,
+}: {
+  items: SessionSnapshot["queue"];
+  cards: SessionSnapshot["estimateCards"];
+  title: string;
+  isFacilitator: boolean;
+  onResume: (queueItemId: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const remaining = items.filter(
+    (item) => item.status === "pending" || item.status === "active",
+  );
+  const summaryText = [
+    title,
+    "",
+    ...items.map((item) => {
+      const outcome =
+        item.groomingOutcome ??
+        (item.status === "estimated"
+          ? "ready"
+          : item.status === "skipped"
+            ? "parked"
+            : null);
+      const estimate =
+        item.finalEstimate === null ? "" : ` · ${voteLabel(item.finalEstimate, cards)}`;
+      const note = item.groomingNote ? ` — ${item.groomingNote}` : "";
+      return `${item.identifier}: ${groomingOutcomeLabel(outcome)}${estimate}${note}`;
+    }),
+  ].join("\n");
+
+  async function copySummary() {
+    await navigator.clipboard.writeText(summaryText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <div className="session-summary">
+      <div className="session-summary-heading">
+        <span><Check size={22} /></span>
+        <div>
+          <p className="step-label">GROOMING SUMMARY</p>
+          <h1>{remaining.length ? "Finished for now." : "That’s the queue."}</h1>
+          <p>
+            {items.filter((item) => item.groomingOutcome === "ready" || item.status === "estimated").length} ready ·{" "}
+            {remaining.length} remaining
+          </p>
+        </div>
+      </div>
+      <div className="summary-list">
+        {items.map((item) => {
+          const outcome =
+            item.groomingOutcome ??
+            (item.status === "estimated"
+              ? "ready"
+              : item.status === "skipped"
+                ? "parked"
+                : null);
+          return (
+            <a href={item.url} key={item.id} rel="noreferrer" target="_blank">
+              <div>
+                <b>{item.identifier}</b>
+                <span>{item.title}</span>
+                {item.groomingNote && <small>{item.groomingNote}</small>}
+              </div>
+              <em className={outcome ?? "pending"}>
+                {groomingOutcomeLabel(outcome)}
+                {item.finalEstimate !== null && ` · ${voteLabel(item.finalEstimate, cards)}`}
+              </em>
+            </a>
+          );
+        })}
+      </div>
+      <div className="session-summary-actions">
+        {isFacilitator && remaining[0] && (
+          <button
+            className="button button-primary"
+            onClick={() => onResume(remaining[0].id)}
+            type="button"
+          >
+            Resume {remaining.length} remaining
+          </button>
+        )}
+        <button className="button button-ghost" onClick={copySummary} type="button">
+          {copied ? <Check size={15} /> : <Copy size={15} />}
+          {copied ? "Copied" : "Copy summary"}
+        </button>
+        <Link className="button button-dark" href="/app">
+          Back to sessions
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -1497,7 +1778,7 @@ function Participant({
   revealed: boolean;
   cards: SessionSnapshot["estimateCards"];
   isFacilitator: boolean;
-  onRole: (role: ParticipantRole) => void;
+  onRole: (role: ParticipantRole, votingEnabled: boolean) => void;
 }) {
   return (
     <div className={`participant ${online ? "online" : ""}`}>
@@ -1506,17 +1787,33 @@ function Participant({
         <b>{person.name}</b>
         {isFacilitator ? (
           <select
-            onChange={(event) =>
-              onRole(event.target.value as ParticipantRole)
+            aria-label={`Role for ${person.name}`}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value === "facilitator-voter") {
+                onRole("facilitator", true);
+              } else {
+                const role = value as ParticipantRole;
+                onRole(role, role === "voter");
+              }
+            }}
+            value={
+              person.role === "facilitator" && person.votingEnabled
+                ? "facilitator-voter"
+                : person.role
             }
-            value={person.role}
           >
             <option value="facilitator">Facilitator</option>
+            <option value="facilitator-voter">Facilitator + voter</option>
             <option value="voter">Voter</option>
             <option value="observer">Observer</option>
           </select>
         ) : (
-          <small>{person.role}</small>
+          <small>
+            {person.role === "facilitator" && person.votingEnabled
+              ? "facilitator · voting"
+              : person.role}
+          </small>
         )}
       </div>
       <span
@@ -1526,8 +1823,7 @@ function Participant({
           voteLabel(person.vote, cards)
         ) : person.hasVoted ? (
           <Check size={14} />
-        ) : person.role === "observer" ||
-          person.role === "facilitator" ? (
+        ) : !person.votingEnabled ? (
           <Eye size={13} />
         ) : (
           "…"

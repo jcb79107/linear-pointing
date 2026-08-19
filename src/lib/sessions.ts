@@ -26,6 +26,7 @@ import {
 import type {
   LinearIssueSummary,
   LinearTeamSummary,
+  GroomingOutcome,
   ParticipantRole,
   SessionSnapshot,
   EstimateCard,
@@ -35,6 +36,7 @@ import type {
 } from "@/lib/domain";
 import { isFinalizableEstimate } from "@/lib/estimates";
 import {
+  createLinearIssueComment,
   getLinearIssue,
   updateLinearIssueEstimate,
   userHasTeamAccess,
@@ -134,6 +136,7 @@ export async function createPokerSession(input: {
       sessionId: session.id,
       userId: input.userId,
       role: "facilitator",
+      votingEnabled: false,
     });
     return session;
   });
@@ -489,7 +492,7 @@ async function createRound(
     .where(
       and(
         eq(participants.sessionId, session.id),
-        eq(participants.role, "voter"),
+        eq(participants.votingEnabled, true),
       ),
     );
   if (eligible.length) {
@@ -526,6 +529,7 @@ export async function joinPokerSession(
         sessionId: session.id,
         userId: user.id,
         role: "voter",
+        votingEnabled: true,
       })
       .onConflictDoNothing()
       .returning({ userId: participants.userId });
@@ -605,34 +609,6 @@ async function requireFacilitator(sessionId: string, userId: string) {
   return membership;
 }
 
-export async function getSessionInviteDetails(
-  sessionId: string,
-  userId: string,
-) {
-  const { session } = await requireFacilitator(sessionId, userId);
-  const [count] = await db
-    .select({ issueCount: sql<number>`count(*)::int` })
-    .from(queueItems)
-    .where(eq(queueItems.sessionId, sessionId));
-
-  return {
-    code: session.code,
-    title: session.title,
-    teamName: session.teamName,
-    issueCount: count?.issueCount ?? 0,
-  };
-}
-
-export async function recordSessionAuditEvent(
-  sessionId: string,
-  actorUserId: string,
-  eventType: string,
-  metadata: Record<string, unknown> = {},
-) {
-  await requireFacilitator(sessionId, actorUserId);
-  await audit(sessionId, actorUserId, eventType, metadata);
-}
-
 export async function getSessionSnapshot(
   sessionId: string,
   userId: string,
@@ -651,6 +627,7 @@ export async function getSessionSnapshot(
         name: users.displayName,
         avatarUrl: users.avatarUrl,
         role: participants.role,
+        votingEnabled: participants.votingEnabled,
       })
       .from(participants)
       .innerJoin(users, eq(users.id, participants.userId))
@@ -680,7 +657,7 @@ export async function getSessionSnapshot(
             and(
               eq(participants.sessionId, sessionId),
               eq(participants.userId, roundVoters.userId),
-              eq(participants.role, "voter"),
+              eq(participants.votingEnabled, true),
             ),
           )
           .where(eq(roundVoters.roundId, activeRound.id)),
@@ -711,16 +688,18 @@ export async function getSessionSnapshot(
     queue: queue.map((item) => ({
       ...item,
       labels: item.labels,
+      groomingOutcome: item.groomingOutcome as GroomingOutcome | null,
       linearCreatedAt: item.linearCreatedAt?.toISOString() ?? null,
       linearUpdatedAt: item.linearUpdatedAt?.toISOString() ?? null,
+      decidedAt: item.decidedAt?.toISOString() ?? null,
     })),
     participants: memberRows.map((member) => {
       const rawVote =
-        member.role === "voter" ? (voteMap.get(member.id) ?? null) : null;
+        member.votingEnabled ? (voteMap.get(member.id) ?? null) : null;
       return {
         ...member,
         online: false,
-        hasVoted: member.role === "voter" && voteMap.has(member.id),
+        hasVoted: member.votingEnabled && voteMap.has(member.id),
         vote:
           rawVote === null || !activeRound
             ? null
@@ -740,6 +719,7 @@ export async function getSessionSnapshot(
           eligibleVoterIds,
           estimateAtStart: activeRound.estimateAtStart,
           revealedAt: activeRound.revealedAt?.toISOString() ?? null,
+          createdAt: activeRound.createdAt.toISOString(),
         }
       : null,
   };
@@ -785,6 +765,10 @@ export async function refreshActiveIssuePreview(
         subIssues: refreshed.subIssues,
         attachments: refreshed.attachments,
         currentEstimate: refreshed.estimate,
+        finalEstimate: null,
+        groomingOutcome: null,
+        groomingNote: null,
+        decidedAt: null,
         linearCreatedAt: new Date(refreshed.createdAt),
         linearUpdatedAt: new Date(refreshed.updatedAt),
         dueDate: refreshed.dueDate,
@@ -839,7 +823,7 @@ export async function castVote(input: {
         and(
           eq(participants.sessionId, input.sessionId),
           eq(participants.userId, roundVoters.userId),
-          eq(participants.role, "voter"),
+          eq(participants.votingEnabled, true),
         ),
       )
       .where(
@@ -877,7 +861,7 @@ export async function castVote(input: {
           and(
             eq(participants.sessionId, input.sessionId),
             eq(participants.userId, roundVoters.userId),
-            eq(participants.role, "voter"),
+            eq(participants.votingEnabled, true),
           ),
         )
         .where(eq(roundVoters.roundId, round.id)),
@@ -957,6 +941,7 @@ export async function setParticipantRole(input: {
   actorUserId: string;
   participantUserId: string;
   role: ParticipantRole;
+  votingEnabled?: boolean;
   addToCurrentRound?: boolean;
 }) {
   const { session } = await requireFacilitator(
@@ -984,10 +969,16 @@ export async function setParticipantRole(input: {
       throw new Error("A session must keep at least one facilitator");
     }
   }
+  const votingEnabled =
+    input.role === "voter"
+      ? true
+      : input.role === "observer"
+        ? false
+        : Boolean(input.votingEnabled);
   await db.transaction(async (tx) => {
     await tx
       .update(participants)
-      .set({ role: input.role, updatedAt: new Date() })
+      .set({ role: input.role, votingEnabled, updatedAt: new Date() })
       .where(
         and(
           eq(participants.sessionId, input.sessionId),
@@ -1008,8 +999,7 @@ export async function setParticipantRole(input: {
       .limit(1);
     if (round) {
       if (
-        input.addToCurrentRound &&
-        input.role === "voter"
+        input.addToCurrentRound && votingEnabled
       ) {
         await tx
           .insert(roundVoters)
@@ -1018,7 +1008,7 @@ export async function setParticipantRole(input: {
             userId: input.participantUserId,
           })
           .onConflictDoNothing();
-      } else if (input.role !== "voter") {
+      } else if (!votingEnabled) {
         await tx
           .delete(roundVoters)
           .where(
@@ -1037,7 +1027,7 @@ export async function setParticipantRole(input: {
             and(
               eq(participants.sessionId, input.sessionId),
               eq(participants.userId, roundVoters.userId),
-              eq(participants.role, "voter"),
+              eq(participants.votingEnabled, true),
             ),
           )
           .where(eq(roundVoters.roundId, round.id)),
@@ -1072,6 +1062,7 @@ export async function setParticipantRole(input: {
       metadata: {
         participantUserId: input.participantUserId,
         role: input.role,
+        votingEnabled,
       },
     });
   });
@@ -1134,6 +1125,10 @@ export async function activateQueueItem(input: {
         subIssues: refreshed.subIssues,
         attachments: refreshed.attachments,
         currentEstimate: refreshed.estimate,
+        finalEstimate: null,
+        groomingOutcome: null,
+        groomingNote: null,
+        decidedAt: null,
         linearCreatedAt: new Date(refreshed.createdAt),
         linearUpdatedAt: new Date(refreshed.updatedAt),
         dueDate: refreshed.dueDate,
@@ -1155,12 +1150,50 @@ export async function activateQueueItem(input: {
 }
 
 export async function skipActiveItem(sessionId: string, userId: string) {
+  return recordGroomingOutcome({
+    sessionId,
+    userId,
+    outcome: "parked",
+    note: "",
+  });
+}
+
+function outcomeLabel(outcome: GroomingOutcome) {
+  switch (outcome) {
+    case "ready":
+      return "Ready";
+    case "needs-work":
+      return "Needs details";
+    case "split":
+      return "Split";
+    case "parked":
+      return "Parked";
+  }
+}
+
+function groomingComment(
+  sessionTitle: string,
+  outcome: GroomingOutcome,
+  note: string,
+) {
+  return `**Grooming outcome: ${outcomeLabel(outcome)}**\n\n${note.trim()}\n\n_Recorded during ${sessionTitle}._`;
+}
+
+export async function recordGroomingOutcome(input: {
+  sessionId: string;
+  userId: string;
+  outcome: Exclude<GroomingOutcome, "ready">;
+  note?: string;
+}) {
+  const sessionId = input.sessionId;
+  const userId = input.userId;
   const { session } = await requireFacilitator(sessionId, userId);
   if (!session.activeQueueItemId) throw new Error("No active issue");
   const queue = await db
     .select({
       id: queueItems.id,
       linearIssueId: queueItems.linearIssueId,
+      identifier: queueItems.identifier,
       position: queueItems.position,
       status: queueItems.status,
       currentEstimate: queueItems.currentEstimate,
@@ -1175,6 +1208,16 @@ export async function skipActiveItem(sessionId: string, userId: string) {
     ? await getLinearIssue(userId, nextQueueItem.linearIssueId)
     : null;
   if (refreshedNext) requireEstimableIssue(refreshedNext);
+  const activeItem = queue.find((item) => item.id === session.activeQueueItemId);
+  if (!activeItem) throw new Error("Active issue not found");
+  const note = input.note?.trim().slice(0, 2000) ?? "";
+  if (note) {
+    await createLinearIssueComment(
+      userId,
+      activeItem.linearIssueId,
+      groomingComment(session.title, input.outcome, note),
+    );
+  }
 
   await db.transaction(async (tx) => {
     await tx
@@ -1188,7 +1231,13 @@ export async function skipActiveItem(sessionId: string, userId: string) {
       );
     await tx
       .update(queueItems)
-      .set({ status: "skipped", updatedAt: new Date() })
+      .set({
+        status: "skipped",
+        groomingOutcome: input.outcome,
+        groomingNote: note || null,
+        decidedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(eq(queueItems.id, session.activeQueueItemId!));
     if (nextId) {
       await tx
@@ -1239,10 +1288,53 @@ export async function skipActiveItem(sessionId: string, userId: string) {
       sessionId,
       actorUserId: userId,
       eventType: "issue.skipped",
-      metadata: { queueItemId: session.activeQueueItemId },
+      metadata: {
+        queueItemId: session.activeQueueItemId,
+        identifier: activeItem.identifier,
+        outcome: input.outcome,
+        noteWrittenToLinear: Boolean(note),
+      },
     });
   });
-  await broadcastSessionChanged(sessionId, "issue-skipped");
+  await broadcastSessionChanged(sessionId, "grooming-outcome-recorded");
+}
+
+export async function finishPokerSession(sessionId: string, userId: string) {
+  const { session } = await requireFacilitator(sessionId, userId);
+  if (session.status === "ended") return;
+  await db.transaction(async (tx) => {
+    await tx
+      .update(rounds)
+      .set({ status: "abandoned" })
+      .where(
+        and(
+          eq(rounds.sessionId, sessionId),
+          inArray(rounds.status, ["voting", "revealed"]),
+        ),
+      );
+    if (session.activeQueueItemId) {
+      await tx
+        .update(queueItems)
+        .set({ status: "pending", updatedAt: new Date() })
+        .where(eq(queueItems.id, session.activeQueueItemId));
+    }
+    await tx
+      .update(pokerSessions)
+      .set({
+        status: "ended",
+        activeQueueItemId: null,
+        endedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(pokerSessions.id, sessionId));
+    await tx.insert(auditEvents).values({
+      sessionId,
+      actorUserId: userId,
+      eventType: "session.ended",
+      metadata: { reason: "facilitator_finished" },
+    });
+  });
+  await broadcastSessionChanged(sessionId, "session-finished");
 }
 
 export async function finalizeEstimate(input: {
@@ -1250,6 +1342,7 @@ export async function finalizeEstimate(input: {
   userId: string;
   estimate: number;
   overwrite?: boolean;
+  note?: string;
 }) {
   const { session } = await requireFacilitator(input.sessionId, input.userId);
   if (!session.activeQueueItemId) throw new Error("No active issue");
@@ -1310,6 +1403,14 @@ export async function finalizeEstimate(input: {
         item.linearIssueId,
         input.estimate,
       );
+      const note = input.note?.trim().slice(0, 2000) ?? "";
+      if (note) {
+        await createLinearIssueComment(
+          input.userId,
+          item.linearIssueId,
+          groomingComment(session.title, "ready", note),
+        );
+      }
 
       const queue = await tx
         .select({
@@ -1333,6 +1434,9 @@ export async function finalizeEstimate(input: {
           status: "estimated",
           currentEstimate: input.estimate,
           finalEstimate: input.estimate,
+          groomingOutcome: "ready",
+          groomingNote: note || null,
+          decidedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(queueItems.id, item.id));
@@ -1405,6 +1509,8 @@ export async function finalizeEstimate(input: {
             queueItemId: item.id,
             linearIssueId: item.linearIssueId,
             estimate: input.estimate,
+            outcome: "ready",
+            noteWrittenToLinear: Boolean(note),
           },
         },
       ]);

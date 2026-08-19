@@ -33,10 +33,12 @@ export function majorityVote(
   for (const value of values) {
     counts.set(value, (counts.get(value) ?? 0) + 1);
   }
-  return [...counts.entries()]
-    .sort(([leftValue, leftCount], [rightValue, rightCount]) =>
+  const ranked = [...counts.entries()].sort(
+    ([leftValue, leftCount], [rightValue, rightCount]) =>
       rightCount - leftCount || rightValue - leftValue,
-    )[0][0];
+  );
+  if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null;
+  return ranked[0][0];
 }
 
 export function nextPendingItemId(

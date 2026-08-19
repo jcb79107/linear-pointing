@@ -10,15 +10,13 @@ const serverEnvSchema = z.object({
   PUSHER_KEY: z.string().min(1),
   PUSHER_SECRET: z.string().min(1),
   PUSHER_CLUSTER: z.string().min(1),
-  SLACK_INVITE_WEBHOOK_URL: z.string().url().optional(),
-  SLACK_INVITE_CHANNEL: z.string().trim().min(1).optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
 export function isAppConfigured(): boolean {
   return Boolean(
-      process.env.DATABASE_URL &&
+    process.env.DATABASE_URL &&
       process.env.LINEAR_CLIENT_ID &&
       process.env.TOKEN_ENCRYPTION_KEY,
   );
@@ -37,9 +35,6 @@ export function getServerEnv(): ServerEnv {
     PUSHER_KEY: process.env.PUSHER_KEY ?? "disabled",
     PUSHER_SECRET: process.env.PUSHER_SECRET ?? "disabled",
     PUSHER_CLUSTER: process.env.PUSHER_CLUSTER ?? "us2",
-    SLACK_INVITE_WEBHOOK_URL:
-      process.env.SLACK_INVITE_WEBHOOK_URL || undefined,
-    SLACK_INVITE_CHANNEL: process.env.SLACK_INVITE_CHANNEL || undefined,
   });
 
   if (!parsed.success) {

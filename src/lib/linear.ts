@@ -49,6 +49,14 @@ export interface IssueSearchFilters {
 export interface LinearIssueFilterOptions {
   activeCycle: UpcomingLinearCycle | null;
   upcomingCycle: UpcomingLinearCycle | null;
+  customViews: LinearCustomViewSummary[];
+}
+
+export interface LinearCustomViewSummary {
+  id: string;
+  name: string;
+  shared: boolean;
+  teamId: string | null;
 }
 
 function parseScopes(value: string | string[]): string[] {
@@ -185,6 +193,7 @@ async function summarizeIssue(
     stateName: state?.name ?? null,
     stateType: state?.type ?? null,
     assigneeName: assignee?.displayName ?? null,
+    assigneeId: assignee?.id ?? null,
     projectName: project?.name ?? null,
     labels: labels.nodes.map((label) => label.name),
     subIssues,
@@ -222,6 +231,7 @@ async function summarizeIssueForSearch(
     stateName: state?.name ?? null,
     stateType: state?.type ?? null,
     assigneeName: null,
+    assigneeId: null,
     projectName: null,
     labels: [],
     subIssues: [],
@@ -347,15 +357,19 @@ export async function getUpcomingLinearCycle(
 export async function getLinearIssueFilterOptions(
   userId: string,
   teamId: string,
+  options: { includeCustomViews?: boolean } = {},
 ): Promise<LinearIssueFilterOptions> {
   const client = await getLinearClient(userId);
   const team = await client.team(teamId);
-  const [activeCycle, cycles] = await Promise.all([
+  const [activeCycle, cycles, customViews] = await Promise.all([
     team.activeCycle,
     team.cycles({
       first: 50,
       filter: { isFuture: { eq: true } },
     }),
+    options.includeCustomViews === false
+      ? Promise.resolve([])
+      : listLinearCustomViews(userId, teamId, client),
   ]);
   return {
     activeCycle: activeCycle
@@ -366,7 +380,96 @@ export async function getLinearIssueFilterOptions(
         }
       : null,
     upcomingCycle: findUpcomingLinearCycle(cycles.nodes),
+    customViews,
   };
+}
+
+export async function listLinearCustomViews(
+  userId: string,
+  teamId: string,
+  existingClient?: LinearClient,
+): Promise<LinearCustomViewSummary[]> {
+  const client = existingClient ?? (await getLinearClient(userId));
+  const connection = await client.customViews({ first: 100 });
+  const views = await Promise.all(
+    connection.nodes
+      .filter((view) => view.modelName === "Issue" && !view.archivedAt)
+      .map(async (view) => ({
+        id: view.id,
+        name: view.name,
+        shared: view.shared,
+        teamId: (await view.team)?.id ?? null,
+      })),
+  );
+  return views
+    .filter((view) => view.teamId === null || view.teamId === teamId)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function searchLinearCustomViewIssues(
+  userId: string,
+  viewId: string,
+  filters: IssueSearchFilters,
+  options: { fetchAll?: boolean } = {},
+): Promise<LinearIssueSummary[]> {
+  const client = await getLinearClient(userId);
+  const view = await client.customView(viewId);
+  if (view.modelName !== "Issue" || view.archivedAt) {
+    throw new Error("UNPROCESSABLE:Choose an active Linear issue view");
+  }
+  const connection = await view.issues({ first: 50 });
+  while (options.fetchAll && connection.pageInfo.hasNextPage) {
+    await connection.fetchNext();
+    if (connection.nodes.length >= 1000) break;
+  }
+
+  const query = filters.query?.trim().toLowerCase();
+  const candidates = connection.nodes.filter(
+    (issue) =>
+      !query ||
+      issue.identifier.toLowerCase() === query ||
+      issue.title.toLowerCase().includes(query),
+  );
+  const summaries: LinearIssueSummary[] = [];
+  for (let index = 0; index < candidates.length; index += 12) {
+    const batch = await Promise.all(
+      candidates.slice(index, index + 12).map(async (issue) => {
+        const [team, state, assignee] = await Promise.all([
+          issue.team,
+          issue.state,
+          filters.assigneeScope === "anyone"
+            ? Promise.resolve(undefined)
+            : issue.assignee,
+        ]);
+        if (team?.id !== filters.teamId) return null;
+        const summary = await summarizeIssueForSearch(
+          issue,
+          filters.teamId,
+          state ?? undefined,
+        );
+        return {
+          ...summary,
+          assigneeName: assignee?.displayName ?? null,
+          assigneeId: assignee?.id ?? null,
+        };
+      }),
+    );
+    summaries.push(
+      ...batch.filter((issue): issue is LinearIssueSummary => issue !== null),
+    );
+  }
+  return summaries
+    .filter((issue) => isPointableLinearIssue(issue, filters))
+    .filter((issue) => {
+      if (filters.assigneeScope === "me") {
+        return issue.assigneeId === filters.assigneeId;
+      }
+      if (filters.assigneeScope === "unassigned") {
+        return issue.assigneeName === null;
+      }
+      return true;
+    })
+    .slice(0, options.fetchAll ? 1000 : 50);
 }
 
 export async function getLinearIssue(
@@ -393,6 +496,20 @@ export async function updateLinearIssueEstimate(
     throw new Error("Linear did not confirm the estimate update");
   }
   return summarizeIssue(issue);
+}
+
+export async function createLinearIssueComment(
+  userId: string,
+  issueId: string,
+  body: string,
+): Promise<void> {
+  const { scopes } = await getLinearAccessToken(userId);
+  if (!scopes.includes("write") && !scopes.includes("comments:create")) {
+    throw new Error("Linear comment permission is required");
+  }
+  const client = await getLinearClient(userId);
+  const payload = await client.createComment({ issueId, body });
+  if (!payload.success) throw new Error("Linear did not confirm the comment");
 }
 
 export async function userHasTeamAccess(

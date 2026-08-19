@@ -5,7 +5,9 @@ import { apiError, assertSameOrigin } from "@/lib/http";
 import {
   activateQueueItem,
   finalizeEstimate,
+  finishPokerSession,
   getSessionSnapshot,
+  recordGroomingOutcome,
   refreshActiveIssuePreview,
   revealRound,
   revoteRound,
@@ -18,6 +20,12 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("revote") }),
   z.object({ action: z.literal("skip") }),
   z.object({ action: z.literal("refresh-issue") }),
+  z.object({ action: z.literal("finish") }),
+  z.object({
+    action: z.literal("outcome"),
+    outcome: z.enum(["needs-work", "split", "parked"]),
+    note: z.string().trim().max(2000).optional(),
+  }),
   z.object({
     action: z.literal("activate"),
     queueItemId: z.string().uuid(),
@@ -25,12 +33,14 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("finalize"),
     estimate: z.number().int().nonnegative(),
+    note: z.string().trim().max(2000).optional(),
     overwrite: z.boolean().optional(),
   }),
   z.object({
     action: z.literal("participant-role"),
     participantUserId: z.string().uuid(),
     role: z.enum(["facilitator", "voter", "observer"]),
+    votingEnabled: z.boolean().optional(),
     addToCurrentRound: z.boolean().optional(),
   }),
 ]);
@@ -59,6 +69,17 @@ export async function POST(
       case "refresh-issue":
         await refreshActiveIssuePreview(id, user.id);
         break;
+      case "finish":
+        await finishPokerSession(id, user.id);
+        break;
+      case "outcome":
+        await recordGroomingOutcome({
+          sessionId: id,
+          userId: user.id,
+          outcome: input.outcome,
+          note: input.note,
+        });
+        break;
       case "activate":
         await activateQueueItem({
           sessionId: id,
@@ -71,6 +92,7 @@ export async function POST(
           sessionId: id,
           userId: user.id,
           estimate: input.estimate,
+          note: input.note,
           overwrite: input.overwrite,
         });
         break;
@@ -80,6 +102,7 @@ export async function POST(
           actorUserId: user.id,
           participantUserId: input.participantUserId,
           role: input.role,
+          votingEnabled: input.votingEnabled,
           addToCurrentRound: input.addToCurrentRound,
         });
         break;

@@ -16,8 +16,11 @@ export function queueItemRemovalError(
   if (sessionStatus === "live" && itemStatus === "active") {
     return "The active ticket cannot be removed";
   }
-  if (sessionStatus === "live" && itemStatus === "estimated") {
-    return "Completed tickets stay in the session history";
+  if (
+    sessionStatus === "live" &&
+    (itemStatus === "estimated" || itemStatus === "skipped")
+  ) {
+    return "Discussed tickets stay in the session history";
   }
   return null;
 }

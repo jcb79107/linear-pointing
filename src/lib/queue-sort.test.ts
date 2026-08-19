@@ -27,6 +27,9 @@ function item(
     status: "pending",
     currentEstimate: null,
     finalEstimate: null,
+    groomingOutcome: null,
+    groomingNote: null,
+    decidedAt: null,
     linearCreatedAt: null,
     linearUpdatedAt: null,
     dueDate: null,
@@ -67,5 +70,18 @@ describe("agenda sorting", () => {
         { field: "title", direction: "desc" },
       ]).map((entry) => entry.identifier),
     ).toEqual(["ENG-3", "ENG-2", "ENG-1"]);
+  });
+
+  it("keeps missing values last in either direction", () => {
+    const queue = [
+      item("ENG-1", { linearUpdatedAt: null }),
+      item("ENG-2", { linearUpdatedAt: "2026-01-01T00:00:00.000Z" }),
+      item("ENG-3", { linearUpdatedAt: "2026-02-01T00:00:00.000Z" }),
+    ];
+    expect(sortQueueItems(queue, "updated").map((entry) => entry.identifier)).toEqual([
+      "ENG-3",
+      "ENG-2",
+      "ENG-1",
+    ]);
   });
 });
