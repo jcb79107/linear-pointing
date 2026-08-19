@@ -30,23 +30,32 @@ workspace-agnostic pre-filled OAuth manifest are the cleanest setup path. There
 is no need for an application-level workspace allowlist. See [OAuth 2.0](https://linear.app/developers/oauth-2-0-authentication)
 and [OAuth application manifests](https://linear.app/developers/oauth-app-manifests).
 
-## Implemented in this pass
+## Implemented product decisions
 
 - Personal defaults page for deck, reveal, ticket intake, and agenda order.
 - Any estimate-enabled Linear team and any authorizing Linear workspace.
 - Public, pre-filled OAuth app setup link for self-hosters.
 - Active/upcoming/any-cycle intake; Backlog/Todo/In Progress; estimated,
   unestimated, or any; anyone/me/unassigned.
+- Import from existing Linear custom views so teams can reuse the filters they
+  already maintain in Linear.
 - Linear manual order plus priority, age, recency, identifier, title, custom
   multi-rule sorts, and final drag order.
 - Session-level snapshots so preference changes do not mutate active rooms.
+- Lightweight readiness signals for description, acceptance criteria, owner,
+  and project.
+- Four unambiguous outcomes: Ready with an estimate, Needs details, Split, or
+  Parked. Optional notes are written to the Linear issue.
+- Facilitators may vote or remain neutral, and tied votes never fabricate a
+  recommendation.
+- A visible round timer, pause/resume, and a copyable end-of-session summary.
 
 ## Sensible next bets
 
-- Optional round timer with facilitator-controlled expiry.
-- Non-estimate cards such as question/pass, stored separately from values so
-  they can never be written to Linear accidentally.
-- Named settings profiles for facilitators who run ceremonies for multiple
+- Facilitator keyboard shortcuts and accessible modal focus management.
+- Named settings profiles for product managers who run ceremonies for multiple
   teams with different workflows.
 - Project, label, and explicit workflow-state filters when teams need more
   granularity than the three workflow categories.
+- Aggregate readiness and meeting-flow insights only after real users show
+  that the information changes how they prepare for grooming.

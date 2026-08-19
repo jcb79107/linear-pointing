@@ -44,6 +44,7 @@ import type {
 import { voteLabel } from "@/lib/estimates";
 import type { LinearIssueFilterOptions } from "@/lib/linear";
 import { sortQueueItems } from "@/lib/queue-sort";
+import { readinessScore } from "@/lib/readiness";
 
 function SortableQueueRow({
   item,
@@ -56,6 +57,7 @@ function SortableQueueRow({
   onRemove: () => void;
   cards: EstimateCard[];
 }) {
+  const readiness = readinessScore(item);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
   return (
@@ -77,7 +79,8 @@ function SortableQueueRow({
       <div>
         <b>{item.title}</b>
         <small>
-          {item.identifier} · {item.priorityLabel ?? "No priority"}
+          {item.identifier} · {item.priorityLabel ?? "No priority"} ·{" "}
+          {readiness.ready}/{readiness.total} ready
         </small>
       </div>
       <span className="estimate-pill">
@@ -115,6 +118,7 @@ export function QueueBuilder({
   const [searching, setSearching] = useState(false);
   const [bulkAdding, setBulkAdding] = useState(false);
   const [cycleScope, setCycleScope] = useState(settings.cycleScope);
+  const [customViewId, setCustomViewId] = useState("");
   const [stateTypes, setStateTypes] = useState(settings.stateTypes);
   const [estimateScope, setEstimateScope] = useState(settings.estimateScope);
   const [assigneeScope, setAssigneeScope] = useState(settings.assigneeScope);
@@ -154,6 +158,7 @@ export function QueueBuilder({
     return new URLSearchParams({
       teamId: initialSnapshot.teamId,
       cycleScope,
+      ...(customViewId ? { customViewId } : {}),
       stateTypes: stateTypes.join(","),
       estimateScope,
       assigneeScope,
@@ -225,7 +230,7 @@ export function QueueBuilder({
       setQuery("");
       setHasSearched(false);
       const refreshed = await refreshSnapshot();
-      await applySort(settings.defaultSort, refreshed);
+      await applySort(customViewId ? "manual" : sortPreset, refreshed);
       setNotice(
         `Added ${issues.length} ${
           issues.length === 1 ? "ticket" : "tickets"
@@ -285,7 +290,7 @@ export function QueueBuilder({
       setQuery("");
       setHasSearched(false);
       const refreshed = await refreshSnapshot();
-      await applySort(settings.defaultSort, refreshed);
+      await applySort(customViewId ? "manual" : sortPreset, refreshed);
       setActivePanel("queue");
       setNotice(
         `Added ${issueIds.length} matching ${
@@ -575,18 +580,28 @@ export function QueueBuilder({
                 </p>
                 <div className="intake-filter-grid">
                   <label>
-                    Cycle
+                    Source
                     <select
-                      onChange={(event) =>
-                        setCycleScope(
-                          event.target.value as UserSettings["cycleScope"],
-                        )
-                      }
-                      value={cycleScope}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value.startsWith("view:")) {
+                          setCustomViewId(value.slice(5));
+                          setCycleScope("any");
+                        } else {
+                          setCustomViewId("");
+                          setCycleScope(value as UserSettings["cycleScope"]);
+                        }
+                      }}
+                      value={customViewId ? `view:${customViewId}` : cycleScope}
                     >
                       <option value="upcoming">Upcoming cycle</option>
                       <option value="active">Active cycle</option>
-                      <option value="any">Any cycle / backlog</option>
+                      <option value="any">All team tickets</option>
+                      {filters?.customViews.map((view) => (
+                        <option key={view.id} value={`view:${view.id}`}>
+                          View · {view.name}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label>
@@ -644,7 +659,9 @@ export function QueueBuilder({
                 </div>
                 <div className="backlog-source">
                   <span>
-                    {cycleScope === "upcoming"
+                    {customViewId
+                      ? filters?.customViews.find((view) => view.id === customViewId)?.name ?? "Linear view"
+                      : cycleScope === "upcoming"
                       ? filters?.upcomingCycle?.name ??
                         (filters ? "No upcoming cycle" : "Finding cycle…")
                       : cycleScope === "active"
@@ -653,16 +670,18 @@ export function QueueBuilder({
                         : "All matching team tickets"}
                   </span>
                   <small>
-                    {settings.defaultSort === "linear"
-                      ? "Linear order"
-                      : "Your default order"}
+                    {customViewId
+                      ? "View order"
+                      : sortPreset === "linear"
+                        ? "Linear order"
+                        : "Selected order"}
                   </small>
                 </div>
                 <button
                   className="button button-primary"
                   disabled={
-                    (cycleScope === "upcoming" && !filters?.upcomingCycle) ||
-                    (cycleScope === "active" && !filters?.activeCycle) ||
+                    (!customViewId && cycleScope === "upcoming" && !filters?.upcomingCycle) ||
+                    (!customViewId && cycleScope === "active" && !filters?.activeCycle) ||
                     bulkAdding ||
                     busy
                   }
@@ -850,6 +869,7 @@ export function QueueBuilder({
                       value={sortPreset}
                     >
                       <option value="linear">Linear order</option>
+                      <option value="manual">Imported / manual order</option>
                       <option value="priority">Priority</option>
                       <option value="oldest">Oldest first</option>
                       <option value="newest">Newest first</option>

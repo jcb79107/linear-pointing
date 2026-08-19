@@ -2,6 +2,11 @@ export type SessionStatus = "draft" | "live" | "ended";
 export type QueueItemStatus = "pending" | "active" | "estimated" | "skipped";
 export type ParticipantRole = "facilitator" | "voter" | "observer";
 export type RoundStatus = "voting" | "revealed" | "finalized" | "abandoned";
+export type GroomingOutcome =
+  | "ready"
+  | "needs-work"
+  | "split"
+  | "parked";
 export type EstimateScaleType =
   | "notUsed"
   | "exponential"
@@ -24,6 +29,7 @@ export interface SessionUser {
 
 export interface SessionParticipant extends SessionUser {
   role: ParticipantRole;
+  votingEnabled: boolean;
   online: boolean;
   hasVoted: boolean;
   vote: VoteValue | null;
@@ -60,6 +66,9 @@ export interface SessionQueueItem {
   status: QueueItemStatus;
   currentEstimate: number | null;
   finalEstimate: number | null;
+  groomingOutcome: GroomingOutcome | null;
+  groomingNote: string | null;
+  decidedAt: string | null;
   linearCreatedAt: string | null;
   linearUpdatedAt: string | null;
   dueDate: string | null;
@@ -72,6 +81,7 @@ export interface SessionRound {
   eligibleVoterIds: string[];
   estimateAtStart: number | null;
   revealedAt: string | null;
+  createdAt: string;
 }
 
 export interface SessionSnapshot {
@@ -112,6 +122,7 @@ export interface LinearIssueSummary {
   stateName: string | null;
   stateType: string | null;
   assigneeName: string | null;
+  assigneeId: string | null;
   projectName: string | null;
   labels: string[];
   subIssues: Array<{
@@ -146,6 +157,7 @@ export type TicketEstimateScope = "unestimated" | "estimated" | "any";
 export type TicketAssigneeScope = "anyone" | "me" | "unassigned";
 export type PointableStateType = "backlog" | "unstarted" | "started";
 export type QueueSortPreset =
+  | "manual"
   | "linear"
   | "priority"
   | "oldest"

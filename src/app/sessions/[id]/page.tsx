@@ -2,8 +2,8 @@ import { notFound, redirect } from "next/navigation";
 
 import { LiveRoom } from "@/components/LiveRoom";
 import { getCurrentUser } from "@/lib/auth";
-import { getServerEnv } from "@/lib/env";
 import { getSessionSnapshot } from "@/lib/sessions";
+import { getUserSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -18,15 +18,14 @@ export default async function LiveSessionPage({
     redirect(`/api/auth/linear/start?returnTo=/sessions/${id}`);
   }
   let snapshot;
+  let settings;
   try {
-    snapshot = await getSessionSnapshot(id, user.id);
+    [snapshot, settings] = await Promise.all([
+      getSessionSnapshot(id, user.id),
+      getUserSettings(user.id),
+    ]);
   } catch {
     notFound();
   }
-  return (
-    <LiveRoom
-      initialSnapshot={snapshot}
-      slackInviteChannel={getServerEnv().SLACK_INVITE_CHANNEL}
-    />
-  );
+  return <LiveRoom initialSnapshot={snapshot} intakeDefaults={settings} />;
 }

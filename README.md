@@ -1,8 +1,8 @@
 # Linear Pointing
 
-Linear-native planning poker for any Linear workspace. A facilitator builds an
-ordered issue queue, shares one persistent room link, runs private votes, and
-writes the agreed estimate back to Linear without switching tabs.
+The simple, open-source planning poker app for Linear. A product manager builds
+an ordered issue queue, shares one persistent room link, runs private votes,
+and leaves every ticket with a clear grooming decision without switching tabs.
 
 The app includes a service-free product demo at `/demo`.
 The product decisions behind the configurable workflow are documented in
@@ -16,7 +16,7 @@ The product decisions behind the configurable workflow are documented in
 - personal settings for pointing decks, auto-reveal, ticket intake, and agenda
   ordering defaults
 - ticket intake by active/upcoming/any cycle; Backlog, Todo, and In Progress
-  status; estimate state; and assignee scope
+  status; estimate state; assignee scope; or an existing Linear custom view
 - one-click agenda creation from matching Linear issues
 - individual-ticket search and adding before or during a session
 - Linear, priority, age, recency, identifier, title, and custom multi-rule sort
@@ -25,8 +25,12 @@ The product decisions behind the configurable workflow are documented in
   sub-issues, queue progress, roster, and voting controls
 - every native Linear estimate scale plus compatible Linear, Fibonacci,
   powers-of-two, and custom numeric decks
-- secret replaceable votes, configurable automatic reveal, early reveal, observers,
-  absences, late joins, revotes, skips, and issue revisit
+- ticket-readiness checks for description, acceptance criteria, owner, and project
+- secret replaceable votes, configurable automatic reveal, early reveal,
+  facilitator voting, observers, absences, late joins, revotes, and issue revisit
+- explicit Ready, Needs details, Split, and Parked decisions; optional decision
+  notes are written back to the Linear issue
+- pause/resume and a copyable session summary so grooming can stop on time
 - conflict detection before Linear estimate overwrite
 - PostgreSQL-authoritative recovery and Pusher presence notifications that
   never contain vote values
@@ -52,10 +56,9 @@ and a change reason; clients refetch an authorization-filtered snapshot. A
    `http://localhost:3000/api/auth/linear/callback`
 
 2. Create a Neon database and use its pooled connection string.
-3. Create a Pusher Channels app with private/presence channels enabled.
-4. Copy `.env.example` to `.env.local` and fill every value. Generate the token
+3. Copy `.env.example` to `.env.local` and fill the required values. Generate the token
    key with `openssl rand -base64 32`.
-5. Apply migrations and start the app:
+4. Apply migrations and start the app:
 
 ```bash
 npm install
@@ -63,10 +66,8 @@ npm run db:migrate
 npm run dev
 ```
 
-Pusher variables may be omitted during early local development; the room will
-use polling, but production should configure them. To enable the Slack invite
-button, configure an incoming webhook in `SLACK_INVITE_WEBHOOK_URL`;
-`SLACK_INVITE_CHANNEL` is the label shown in the confirmation dialog.
+Pusher is optional. Without it, the room uses a 10-second polling fallback. Add
+the Pusher variables when you want more responsive live updates.
 
 All Linear teams with estimates enabled appear in the team picker. The default
 deck mirrors the selected team's exact scale. Custom decks are intentionally
@@ -89,8 +90,8 @@ and OAuth PKCE/state behavior.
 
 ## Deployment
 
-Import the repository into Vercel, provision Neon and Pusher, and add the
-variables from `.env.example` to Production and Preview. Set:
+Import the repository into Vercel, provision Neon, and add the variables from
+`.env.example` to Production and Preview. Set:
 
 - `APP_URL` to the production origin
 - `LINEAR_REDIRECT_URI` to
