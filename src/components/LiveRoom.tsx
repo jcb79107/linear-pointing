@@ -36,7 +36,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
-import { Brand } from "@/components/Brand";
+import { Brand, PointedMark } from "@/components/Brand";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { requestJson } from "@/lib/client-request";
 import type {
@@ -1758,7 +1758,7 @@ function WaitingRoom({
 }) {
   return (
     <div className="waiting-room">
-      <span><Users size={24} /></span>
+      <span><PointedMark size={30} /></span>
       <p className="step-label">WAITING ROOM</p>
       <h1>{title}</h1>
       <p>

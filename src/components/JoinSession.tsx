@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowRight, LoaderCircle, RotateCcw } from "lucide-react";
+import { ArrowRight, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { PointedMark } from "@/components/Brand";
 import { requestJson } from "@/lib/client-request";
 
 export function JoinSession({
@@ -71,7 +72,7 @@ export function JoinSession({
         ) : (
           <>
             <span className="join-icon">
-              <LoaderCircle className="spin" size={25} />
+              <PointedMark className="spin" size={28} />
             </span>
             <h1>Joining {session.title}…</h1>
             <p>

@@ -1,7 +1,7 @@
 import { ArrowRight, Check, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
-import { Brand } from "@/components/Brand";
+import { Brand, PointedMark } from "@/components/Brand";
 
 const revealedVotes = [
   { initials: "AK", name: "Ari", vote: 3 },
@@ -123,6 +123,34 @@ export default function Home() {
           </footer>
         </section>
       </section>
+
+      <section className="landing-origin">
+        <PointedMark className="landing-origin-mark" size={88} />
+        <div>
+          <h2>Grooming already lives in Linear.</h2>
+          <p>
+            Pointed only adds the part Linear is missing: private team voting
+            and a shared estimate.
+          </p>
+        </div>
+      </section>
+
+      <footer className="landing-footer">
+        <div className="landing-footer-brand">
+          <Brand />
+          <p>Open-source pointing poker for Linear.</p>
+        </div>
+        <nav aria-label="Footer navigation">
+          <a
+            href="https://github.com/jcb79107/linear-pointing"
+            rel="noreferrer"
+            target="_blank"
+          >
+            GitHub
+          </a>
+          <Link href="/setup">Self-host</Link>
+        </nav>
+      </footer>
     </main>
   );
 }

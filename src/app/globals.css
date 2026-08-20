@@ -8357,3 +8357,143 @@ h3,
     justify-content: center;
   }
 }
+
+.landing-origin {
+  display: grid;
+  width: min(1080px, calc(100% - 48px));
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(36px, 7vw, 84px);
+  margin: 0 auto 104px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  padding: 72px 8px;
+}
+
+.landing-origin-mark {
+  width: 96px;
+  height: 96px;
+  color: var(--blue);
+}
+
+.landing-origin h2 {
+  max-width: 700px;
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(34px, 4vw, 52px);
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 1.05;
+}
+
+.landing-origin p {
+  max-width: 710px;
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 18px;
+  letter-spacing: -0.015em;
+  line-height: 1.55;
+}
+
+.landing-footer {
+  display: flex;
+  width: min(1240px, calc(100% - 48px));
+  align-items: flex-end;
+  justify-content: space-between;
+  margin: 0 auto;
+  border-top: 1px solid var(--hairline);
+  padding: 36px 0 52px;
+}
+
+.landing-footer-brand {
+  display: grid;
+  gap: 13px;
+}
+
+.landing-footer-brand .brand {
+  font-size: 28px;
+}
+
+.landing-footer-brand .brand-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+}
+
+.landing-footer-brand p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.landing-footer nav {
+  display: flex;
+  gap: 24px;
+}
+
+.landing-footer nav a {
+  color: var(--ink-subtle);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.landing-footer nav a:hover {
+  color: var(--ink);
+}
+
+.brand-loading {
+  display: grid;
+  min-height: 100svh;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: var(--canvas);
+  color: var(--blue);
+}
+
+.brand-loading span {
+  color: var(--ink-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  .landing-origin {
+    width: calc(100% - 28px);
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 28px;
+    margin-bottom: 72px;
+    padding: 54px 12px;
+    text-align: center;
+  }
+
+  .landing-origin-mark {
+    width: 76px;
+    height: 76px;
+  }
+
+  .landing-origin p {
+    font-size: 17px;
+  }
+
+  .landing-footer {
+    width: calc(100% - 28px);
+    align-items: flex-start;
+    padding: 30px 0 40px;
+  }
+
+  .landing-footer-brand .brand {
+    font-size: 24px;
+  }
+
+  .landing-footer-brand .brand-mark {
+    width: 39px;
+    height: 39px;
+  }
+
+  .landing-footer nav {
+    gap: 16px;
+    padding-top: 12px;
+  }
+}
