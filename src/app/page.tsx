@@ -4,12 +4,11 @@ import {
   Code2,
   Copy,
   Eye,
-  ListChecks,
   SkipForward,
 } from "lucide-react";
 import Link from "next/link";
 
-import { Brand } from "@/components/Brand";
+import { Brand, PointedMark } from "@/components/Brand";
 
 export default function Home() {
   return (
@@ -37,7 +36,7 @@ export default function Home() {
       <section className="landing-hero">
         <div className="landing-hero-copy">
           <p className="landing-kicker">OPEN SOURCE</p>
-          <h1>Planning poker for Linear.</h1>
+          <h1>Pointing poker for Linear.</h1>
           <p className="landing-summary">
             Create a room from your next cycle. Share the link. Point the
             tickets. Estimates go back to Linear.
@@ -49,9 +48,9 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="actual-product-preview" aria-label="Linear Pointing room preview">
+        <div className="actual-product-preview" aria-label="Pointed room preview">
           <header className="actual-preview-header">
-            <span className="actual-preview-mark"><ListChecks size={14} /></span>
+            <span className="actual-preview-mark"><PointedMark size={18} /></span>
             <div className="actual-preview-title">
               <b>API grooming · July 30</b>
               <small><i /> Live session</small>

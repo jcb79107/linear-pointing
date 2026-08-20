@@ -1,18 +1,30 @@
-# Linear Pointing design system
+# Pointed design system
 
 Status: alpha
 
 This system adapts the public analysis in
 [VoltAgent's Linear DESIGN.md](https://github.com/voltagent/awesome-design-md/blob/main/design-md/linear.app/DESIGN.md)
-for an open-source planning-poker product. It borrows layout and interface
+for an open-source pointing-poker product. It borrows layout and interface
 principles, not Linear's proprietary typefaces, logo, screenshots, or brand
 assets.
 
 ## Product character
 
-Linear Pointing should feel focused, technical, and quiet. The interface keeps
+Pointed should feel focused, technical, and quiet. The interface keeps
 the Linear issue and the team's decision at the center. Decoration is avoided
 when hierarchy, spacing, or a one-pixel rule can do the job.
+
+## Brand
+
+- Name: **Pointed**
+- Descriptor: **Pointing poker for Linear**
+- Positioning: the pointing room that starts and ends in Linear
+- Mark: three independent votes resolving around one decided point
+- Personality: quietly sharp, direct, and useful
+
+Use “pointing poker” in customer-facing copy. “Planning poker” may appear in
+search metadata and explanatory documentation where it helps people recognize
+the category.
 
 The dark marketing surface is the closest expression of the source system. The
 authenticated product supports both light and dark appearance preferences with
@@ -102,7 +114,7 @@ font-family: "SF Pro Text", "SF Pro Display", Inter, ui-sans-serif,
 
 ### Statuses
 
-- Pills are acceptable for statuses, filters, readiness, and estimates.
+- Pills are acceptable for statuses, filters, and estimates.
 - Status color should never compete with the primary action.
 - Labels and priorities from Linear may retain their semantic product colors.
 

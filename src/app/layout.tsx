@@ -5,10 +5,33 @@ import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: {
-    default: "Linear Pointing",
-    template: "%s · Linear Pointing",
+    default: "Pointed",
+    template: "%s · Pointed",
   },
-  description: "Linear-native planning poker with private team voting.",
+  applicationName: "Pointed",
+  description:
+    "Open-source pointing poker for Linear. Import issues, vote privately, and write estimates back.",
+  icons: {
+    icon: "/pointed-mark.svg",
+    shortcut: "/pointed-mark.svg",
+  },
+  keywords: [
+    "pointing poker",
+    "planning poker",
+    "Linear",
+    "story points",
+    "open source",
+  ],
+  openGraph: {
+    title: "Pointed",
+    description: "Pointing poker for Linear.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pointed",
+    description: "Pointing poker for Linear.",
+  },
 };
 
 export default function RootLayout({

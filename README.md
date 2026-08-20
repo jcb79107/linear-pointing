@@ -1,6 +1,6 @@
-# Linear Pointing
+# Pointed
 
-The simple, open-source planning poker app for Linear. A product manager builds
+The simple, open-source pointing poker app for Linear. A product manager builds
 an ordered issue queue, shares one persistent room link, runs private votes,
 and writes the estimate back without switching tabs.
 

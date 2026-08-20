@@ -18,16 +18,16 @@ export default function SetupPage() {
     "https://linear.app/settings/api/applications/new",
   );
   linearSetupUrl.searchParams.set("distribution", "public");
-  linearSetupUrl.searchParams.set("display.description", "Planning poker that imports issues and writes estimates back to Linear.");
-  linearSetupUrl.searchParams.set("developer.name", "Linear Pointing");
-  linearSetupUrl.searchParams.set("oauth.client_name", "Linear Pointing");
+  linearSetupUrl.searchParams.set("display.description", "Pointing poker that imports issues and writes estimates back to Linear.");
+  linearSetupUrl.searchParams.set("developer.name", "Pointed");
+  linearSetupUrl.searchParams.set("oauth.client_name", "Pointed");
   linearSetupUrl.searchParams.set("oauth.client_uri", localAppUrl);
   linearSetupUrl.searchParams.append(
     "oauth.redirect_uris",
     callbackUrl,
   );
   linearSetupUrl.searchParams.append("oauth.grant_types", "authorization_code");
-  const setupPrompt = `Set up Linear Pointing for me from ${repositoryUrl}.
+  const setupPrompt = `Set up Pointed for me from ${repositoryUrl}.
 
 Please:
 1. Clone or open the repository and read README.md and .env.example.

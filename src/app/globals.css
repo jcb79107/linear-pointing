@@ -6417,12 +6417,15 @@ h3,
 
 .brand-mark,
 :root[data-theme="dark"] .brand-mark,
-:root[data-theme="dark"] .room-title .brand-mark {
+:root[data-theme="dark"] .room-title .brand-mark,
+.room-title .brand-mark {
+  display: block;
+  flex: none;
   width: 28px;
   height: 28px;
-  border-radius: 7px;
-  background: var(--blue);
-  color: #ffffff;
+  border-radius: 0;
+  background: transparent;
+  color: var(--blue);
   transform: none;
 }
 
@@ -7507,9 +7510,7 @@ h3,
   width: 32px;
   height: 32px;
   place-items: center;
-  border-radius: 7px;
-  background: #303846;
-  color: #ffffff;
+  color: #5e6ad2;
 }
 
 .actual-preview-title b,
