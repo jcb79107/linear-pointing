@@ -2,9 +2,10 @@ import {
   ArrowRight,
   Check,
   Code2,
+  Copy,
+  Eye,
   ListChecks,
-  TimerReset,
-  Users,
+  SkipForward,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -16,6 +17,9 @@ export default function Home() {
       <nav className="landing-nav" aria-label="Primary navigation">
         <Brand />
         <div className="nav-actions">
+          <Link className="landing-nav-link" href="/setup">
+            Self-host
+          </Link>
           <a
             className="button button-ghost"
             href="https://github.com/jcb79107/linear-pointing"
@@ -30,78 +34,105 @@ export default function Home() {
         </div>
       </nav>
 
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow"><ListChecks size={14} /> LIGHTWEIGHT POINTING FOR LINEAR</p>
-          <h1>
-            Point issues. <span>Update Linear. Keep moving.</span>
-          </h1>
-          <p>
-            Create a room from your next cycle, share one link, vote, and write
-            the estimate back. No duplicate backlog. No meeting-suite bloat.
+      <section className="landing-hero">
+        <div className="landing-hero-copy">
+          <p className="landing-kicker">OPEN SOURCE</p>
+          <h1>Planning poker for Linear.</h1>
+          <p className="landing-summary">
+            Create a room from your next cycle. Share the link. Point the
+            tickets. Estimates go back to Linear.
           </p>
-          <div className="hero-actions">
+          <div className="landing-primary-action">
             <Link className="button button-primary button-large" href="/app">
               Connect Linear <ArrowRight size={18} />
             </Link>
-            <Link className="landing-connect-link" href="/setup">
-              Self-host with your coding agent
-            </Link>
-          </div>
-          <div className="landing-trust">
-            <span><Check size={13} /> Free and open source</span>
-            <span><Check size={13} /> Linear stays the source of truth</span>
-            <span><Check size={13} /> Desktop and phone friendly</span>
           </div>
         </div>
 
-        <div className="hero-product" aria-label="Product preview">
-          <div className="product-topbar">
-            <div><i className="live-dot" /> GROOMING LIVE</div>
-            <span>3 / 8 decided · 14:32</span>
-          </div>
-          <div className="product-grid">
-            <div className="mock-queue">
-              <small>AGENDA</small>
-              <div className="mock-ticket active">
-                <span>API-342</span><b>Retry webhook deliveries</b><Check size={13} />
-              </div>
-              <div className="mock-ticket"><span>API-351</span><b>Workspace usage limits</b></div>
-              <div className="mock-ticket"><span>API-355</span><b>Audit log CSV export</b></div>
+        <div className="actual-product-preview" aria-label="Linear Pointing room preview">
+          <header className="actual-preview-header">
+            <span className="actual-preview-mark"><ListChecks size={14} /></span>
+            <div className="actual-preview-title">
+              <b>API grooming · July 30</b>
+              <small><i /> Live session</small>
             </div>
-            <div className="mock-issue">
-              <small>API-342 · HIGH · TODO</small>
-              <h3>Retry failed webhook deliveries</h3>
-              <p>
-                Everyone can read the full Linear ticket and linked Figma on
-                their own screen before voting.
-              </p>
-              <div className="mock-tags"><span>Figma attached</span></div>
-              <div className="mock-cards">
-                {[0, 1, 2, 3, 5].map((value) => (
-                  <span className={value === 3 ? "selected" : ""} key={value}>
-                    {value}
-                  </span>
+            <div className="actual-preview-progress">
+              <span>0 / 3 decided</span>
+              <i />
+              <span>Total 14:03</span>
+            </div>
+            <div className="actual-preview-header-actions">
+              <span><Copy size={12} /> Copy link</span>
+              <span>Finish for now</span>
+            </div>
+          </header>
+
+          <div className="actual-preview-grid">
+            <aside className="actual-preview-agenda">
+              <div className="actual-pane-heading"><span>AGENDA</span><b>3</b></div>
+              <div className="actual-ticket active">
+                <span>01</span>
+                <div><b>Retry failed webhook deliveries</b><small>API-342 · 4:03</small></div>
+                <i />
+              </div>
+              <div className="actual-ticket">
+                <span>02</span>
+                <div><b>Add workspace usage limits</b><small>API-351</small></div>
+              </div>
+              <div className="actual-ticket">
+                <span>03</span>
+                <div><b>Audit log CSV export</b><small>API-355</small></div>
+              </div>
+              <small className="actual-agenda-footer">Platform API · 0 · 1 · 2 · 3 · 4</small>
+            </aside>
+
+            <section className="actual-preview-issue">
+              <div className="actual-issue-scroll">
+                <div className="actual-issue-meta">
+                  <span>API-342</span><i /> <span>HIGH</span><i /> <span>TODO</span>
+                  <small>Open in Linear ↗</small>
+                </div>
+                <h2>Retry failed webhook deliveries</h2>
+                <div className="actual-issue-tags">
+                  <span className="project">Project · API reliability</span>
+                  <span>Backend</span>
+                  <span>Owner · Ari Kim</span>
+                </div>
+                <p>
+                  Add exponential backoff for failed webhook deliveries and
+                  show the latest delivery status to workspace admins.
+                </p>
+                <h3>Acceptance criteria</h3>
+                <ul>
+                  <li>Retry on 429 and 5xx responses</li>
+                  <li>Cap retries after 24 hours</li>
+                  <li>Show the next retry time in the delivery log</li>
+                </ul>
+              </div>
+              <footer className="actual-round-bar">
+                <div><Eye size={14} /><span><b>Watching this round</b><small>You facilitate; the team points.</small></span></div>
+                <small>ROUND 1 · 1/3 VOTED · ISSUE 4:03</small>
+              </footer>
+            </section>
+
+            <aside className="actual-preview-room">
+              <div className="actual-pane-heading"><span>ROOM</span><b>4</b></div>
+              <div className="actual-room-list">
+                {["Ari Kim", "Riley Lee", "Nina Singh", "Jason Miller"].map((name, index) => (
+                  <div className="actual-person" key={name}>
+                    <span>{name.split(" ").map((part) => part[0]).join("")}</span>
+                    <div><b>{name}</b><small>{index === 3 ? "Facilitator" : "Voter"}</small></div>
+                    <i className={index === 1 ? "voted" : ""}>{index === 1 ? <Check size={12} /> : index === 3 ? <Eye size={12} /> : "…"}</i>
+                  </div>
                 ))}
               </div>
-            </div>
-            <div className="mock-team">
-              <small>ROOM</small>
-              {["AK", "RL", "NS", "JM"].map((name, index) => (
-                <div className="mock-person" key={name}>
-                  <span>{name}</span><b>{["Ari", "Riley", "Nina", "Jason"][index]}</b>
-                  <i className={index < 3 ? "done" : ""}>{index < 3 ? "✓" : "…"}</i>
-                </div>
-              ))}
-            </div>
+              <div className="actual-room-controls">
+                <span className="actual-reveal"><Eye size={13} /> Reveal early</span>
+                <span className="actual-skip"><SkipForward size={12} /> Skip ticket</span>
+              </div>
+            </aside>
           </div>
         </div>
-      </section>
-
-      <section className="value-strip" aria-label="How it works">
-        <article><ListChecks size={21} /><div><b>Start from Linear</b><p>Pull the upcoming cycle and Todo tickets, then set the meeting order.</p></div></article>
-        <article><Users size={21} /><div><b>Review on any device</b><p>Each teammate gets the actual Linear issue and linked Figma on their own screen.</p></div></article>
-        <article><TimerReset size={21} /><div><b>Vote, write back, next</b><p>Use the rounded-up team average, save it to Linear, and keep moving.</p></div></article>
       </section>
     </main>
   );
