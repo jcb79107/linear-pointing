@@ -26,7 +26,6 @@ import {
 import type {
   LinearIssueSummary,
   LinearTeamSummary,
-  GroomingOutcome,
   ParticipantRole,
   RoundSignal,
   SessionSnapshot,
@@ -37,7 +36,6 @@ import type {
 } from "@/lib/domain";
 import { isFinalizableEstimate } from "@/lib/estimates";
 import {
-  createLinearIssueComment,
   getLinearIssue,
   updateLinearIssueEstimate,
   userHasTeamAccess,
@@ -723,7 +721,12 @@ export async function getSessionSnapshot(
     queue: queue.map((item) => ({
       ...item,
       labels: item.labels,
-      groomingOutcome: item.groomingOutcome as GroomingOutcome | null,
+      groomingOutcome:
+        item.groomingOutcome === "ready"
+          ? "ready"
+          : item.groomingOutcome
+            ? "skipped"
+            : null,
       activeStartedAt: item.activeStartedAt?.toISOString() ?? null,
       linearCreatedAt: item.linearCreatedAt?.toISOString() ?? null,
       linearUpdatedAt: item.linearUpdatedAt?.toISOString() ?? null,
@@ -937,71 +940,6 @@ export async function castVote(input: {
     }
   });
   await broadcastSessionChanged(input.sessionId, "vote-updated");
-}
-
-export async function setRoundSignal(input: {
-  sessionId: string;
-  userId: string;
-  signal: RoundSignal | null;
-}) {
-  await requireMembership(input.sessionId, input.userId);
-  await db.transaction(async (tx) => {
-    const [round] = await tx
-      .select({ id: rounds.id, status: rounds.status })
-      .from(rounds)
-      .where(
-        and(
-          eq(rounds.sessionId, input.sessionId),
-          eq(rounds.status, "voting"),
-        ),
-      )
-      .orderBy(desc(rounds.createdAt))
-      .limit(1);
-    if (!round) throw new Error("There is no active voting round");
-    const [eligible] = await tx
-      .select({ userId: roundVoters.userId })
-      .from(roundVoters)
-      .where(
-        and(
-          eq(roundVoters.roundId, round.id),
-          eq(roundVoters.userId, input.userId),
-        ),
-      )
-      .limit(1);
-    if (!eligible) throw new Error("You are observing this round");
-
-    if (input.signal === null) {
-      await tx
-        .delete(roundSignals)
-        .where(
-          and(
-            eq(roundSignals.roundId, round.id),
-            eq(roundSignals.userId, input.userId),
-          ),
-        );
-    } else {
-      await tx
-        .delete(votes)
-        .where(
-          and(
-            eq(votes.roundId, round.id),
-            eq(votes.userId, input.userId),
-          ),
-        );
-      await tx
-        .insert(roundSignals)
-        .values({
-          roundId: round.id,
-          userId: input.userId,
-          value: input.signal,
-        })
-        .onConflictDoUpdate({
-          target: [roundSignals.roundId, roundSignals.userId],
-          set: { value: input.signal, updatedAt: new Date() },
-        });
-    }
-  });
-  await broadcastSessionChanged(input.sessionId, "round-signal-updated");
 }
 
 export async function revealRound(sessionId: string, userId: string) {
@@ -1292,43 +1230,6 @@ export async function activateQueueItem(input: {
 }
 
 export async function skipActiveItem(sessionId: string, userId: string) {
-  return recordGroomingOutcome({
-    sessionId,
-    userId,
-    outcome: "parked",
-    note: "",
-  });
-}
-
-function outcomeLabel(outcome: GroomingOutcome) {
-  switch (outcome) {
-    case "ready":
-      return "Ready";
-    case "needs-work":
-      return "Needs details";
-    case "split":
-      return "Split";
-    case "parked":
-      return "Parked";
-  }
-}
-
-function groomingComment(
-  sessionTitle: string,
-  outcome: GroomingOutcome,
-  note: string,
-) {
-  return `**Grooming outcome: ${outcomeLabel(outcome)}**\n\n${note.trim()}\n\n_Recorded during ${sessionTitle}._`;
-}
-
-export async function recordGroomingOutcome(input: {
-  sessionId: string;
-  userId: string;
-  outcome: Exclude<GroomingOutcome, "ready">;
-  note?: string;
-}) {
-  const sessionId = input.sessionId;
-  const userId = input.userId;
   const { session } = await requireFacilitator(sessionId, userId);
   if (!session.activeQueueItemId) throw new Error("No active issue");
   const queue = await db
@@ -1354,14 +1255,6 @@ export async function recordGroomingOutcome(input: {
   if (refreshedNext) requireEstimableIssue(refreshedNext);
   const activeItem = queue.find((item) => item.id === session.activeQueueItemId);
   if (!activeItem) throw new Error("Active issue not found");
-  const note = input.note?.trim().slice(0, 2000) ?? "";
-  if (note) {
-    await createLinearIssueComment(
-      userId,
-      activeItem.linearIssueId,
-      groomingComment(session.title, input.outcome, note),
-    );
-  }
   const decidedAt = new Date();
 
   await db.transaction(async (tx) => {
@@ -1378,8 +1271,8 @@ export async function recordGroomingOutcome(input: {
       .update(queueItems)
       .set({
         status: "skipped",
-        groomingOutcome: input.outcome,
-        groomingNote: note || null,
+        groomingOutcome: "skipped",
+        groomingNote: null,
         decidedAt,
         activeStartedAt: null,
         elapsedSeconds: accumulatedElapsedSeconds(
@@ -1449,12 +1342,11 @@ export async function recordGroomingOutcome(input: {
       metadata: {
         queueItemId: session.activeQueueItemId,
         identifier: activeItem.identifier,
-        outcome: input.outcome,
-        noteWrittenToLinear: Boolean(note),
+        outcome: "skipped",
       },
     });
   });
-  await broadcastSessionChanged(sessionId, "grooming-outcome-recorded");
+  await broadcastSessionChanged(sessionId, "issue-skipped");
 }
 
 export async function finishPokerSession(sessionId: string, userId: string) {
@@ -1525,7 +1417,6 @@ export async function finalizeEstimate(input: {
   userId: string;
   estimate: number;
   overwrite?: boolean;
-  note?: string;
 }) {
   const { session } = await requireFacilitator(input.sessionId, input.userId);
   if (!session.activeQueueItemId) throw new Error("No active issue");
@@ -1586,14 +1477,6 @@ export async function finalizeEstimate(input: {
         item.linearIssueId,
         input.estimate,
       );
-      const note = input.note?.trim().slice(0, 2000) ?? "";
-      if (note) {
-        await createLinearIssueComment(
-          input.userId,
-          item.linearIssueId,
-          groomingComment(session.title, "ready", note),
-        );
-      }
       const finalizedAt = new Date();
 
       const queue = await tx
@@ -1619,7 +1502,7 @@ export async function finalizeEstimate(input: {
           currentEstimate: input.estimate,
           finalEstimate: input.estimate,
           groomingOutcome: "ready",
-          groomingNote: note || null,
+          groomingNote: null,
           decidedAt: finalizedAt,
           activeStartedAt: null,
           elapsedSeconds: accumulatedElapsedSeconds(
@@ -1707,7 +1590,6 @@ export async function finalizeEstimate(input: {
             linearIssueId: item.linearIssueId,
             estimate: input.estimate,
             outcome: "ready",
-            noteWrittenToLinear: Boolean(note),
           },
         },
       ]);

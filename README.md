@@ -2,9 +2,8 @@
 
 The simple, open-source planning poker app for Linear. A product manager builds
 an ordered issue queue, shares one persistent room link, runs private votes,
-and leaves every ticket with a clear grooming decision without switching tabs.
+and writes the estimate back without switching tabs.
 
-The app includes a service-free product demo at `/demo`.
 The product decisions behind the configurable workflow are documented in
 [`docs/product-research.md`](docs/product-research.md).
 
@@ -17,8 +16,6 @@ The product decisions behind the configurable workflow are documented in
   ordering defaults
 - ticket intake by active/upcoming/any cycle; Backlog, Todo, and In Progress
   status; estimate state; assignee scope; or an existing Linear custom view
-- pre-meeting context filters for tickets with a useful description and
-  acceptance criteria, plus full readiness scores in the prepared agenda
 - one-click agenda creation from matching Linear issues
 - individual-ticket search and adding before or during a session
 - Linear, priority, age, recency, identifier, title, and custom multi-rule sort
@@ -27,15 +24,13 @@ The product decisions behind the configurable workflow are documented in
   sub-issues, queue progress, roster, and phone-friendly voting controls
 - every native Linear estimate scale plus compatible Linear, Fibonacci,
   powers-of-two, and custom numeric decks
-- ticket-readiness checks for description, acceptance criteria, owner, and project
 - secret replaceable votes, configurable automatic reveal, early reveal,
   facilitator voting, observers, absences, late joins, revotes, and issue revisit
 - a pre-session waiting room, copyable Slack invite, joined-team count,
-  keyboard voting/facilitation shortcuts, and a non-numeric Need context signal
+  and keyboard voting/facilitation shortcuts
 - a suggested final estimate based on the arithmetic average, rounded up to the
   next valid Linear estimate card, with a facilitator override before write-back
-- explicit Ready, Needs details, Split, and Parked decisions; optional decision
-  notes are written back to the Linear issue
+- one secondary issue action: skip and continue to the next ticket
 - total-session and per-ticket timers, pause/resume, and a copyable timed
   session summary so grooming can stop on time
 - conflict detection before Linear estimate overwrite

@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
-  CircleHelp,
   CircleDot,
   CirclePlus,
   Copy,
@@ -15,14 +14,11 @@ import {
   EyeOff,
   Keyboard,
   LoaderCircle,
+  PauseCircle,
   RefreshCw,
   RotateCcw,
   Search,
   SkipForward,
-  PauseCircle,
-  ListChecks,
-  MessageSquareText,
-  Scissors,
   Trash2,
   Users,
   X,
@@ -47,7 +43,6 @@ import type {
   GroomingOutcome,
   LinearIssueSummary,
   ParticipantRole,
-  RoundSignal,
   SessionParticipant,
   SessionSnapshot,
   UserSettings,
@@ -61,7 +56,6 @@ import {
   isFigmaUrl,
 } from "@/lib/figma";
 import { roundedUpAverageVote } from "@/lib/rounds";
-import { readinessChecks } from "@/lib/readiness";
 import { accumulatedElapsedSeconds } from "@/lib/timing";
 
 interface LiveRoomProps {
@@ -154,26 +148,6 @@ function optimisticVote(
   };
 }
 
-function optimisticSignal(
-  snapshot: SessionSnapshot,
-  userId: string,
-  signal: RoundSignal | null,
-): SessionSnapshot {
-  return {
-    ...snapshot,
-    participants: snapshot.participants.map((person) =>
-      person.id === userId
-        ? {
-            ...person,
-            signal,
-            hasVoted: signal ? false : person.hasVoted,
-            vote: signal ? null : person.vote,
-          }
-        : person,
-    ),
-  };
-}
-
 function localRound(
   snapshot: SessionSnapshot,
   queueItemId: string,
@@ -202,7 +176,6 @@ export function LiveRoom({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [busy, setBusy] = useState(false);
   const [voteBusy, setVoteBusy] = useState(false);
-  const [signalBusy, setSignalBusy] = useState(false);
   const [refreshingIssue, setRefreshingIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewNotice, setPreviewNotice] = useState<string | null>(null);
@@ -211,7 +184,6 @@ export function LiveRoom({
   >("connected");
   const [copied, setCopied] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [decisionNote, setDecisionNote] = useState("");
   const [addIssueOpen, setAddIssueOpen] = useState(false);
   const [addIssueQuery, setAddIssueQuery] = useState("");
   const [addIssueResults, setAddIssueResults] = useState<
@@ -438,10 +410,6 @@ export function LiveRoom({
   const voteSpread = revealedVotes.length
     ? `${Math.min(...revealedVotes)}–${Math.max(...revealedVotes)}`
     : null;
-  const contextParticipants = eligibleParticipants.filter(
-    (participant) => participant.signal === "needs-context",
-  );
-  const readiness = activeItem ? readinessChecks(activeItem) : [];
   const normalizedAddIssueQuery = addIssueQuery.trim().toLowerCase();
   const addQueuedMatch = normalizedAddIssueQuery
     ? snapshot.queue.find(
@@ -498,45 +466,6 @@ export function LiveRoom({
     }
   }
 
-  async function toggleContextSignal() {
-    const nextSignal = me?.signal === "needs-context" ? null : "needs-context";
-    setError(null);
-    if (demoMode) {
-      setSnapshot((current) =>
-        optimisticSignal(current, current.currentUserId, nextSignal),
-      );
-      return;
-    }
-    setSignalBusy(true);
-    setSnapshot((current) =>
-      optimisticSignal(current, current.currentUserId, nextSignal),
-    );
-    try {
-      const { data, response } = await requestJson<RoomApiResponse>(
-        `/api/sessions/${snapshot.id}/signal`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signal: nextSignal }),
-        },
-      );
-      if (!response.ok || !data.snapshot) {
-        throw new Error(data.error ?? "Could not update your context signal");
-      }
-      setSnapshot(data.snapshot);
-      setSyncState("connected");
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not update your context signal",
-      );
-      await refresh();
-    } finally {
-      setSignalBusy(false);
-    }
-  }
-
   function demoAction(
     action: string,
     payload: Record<string, unknown> = {},
@@ -553,9 +482,7 @@ export function LiveRoom({
           },
           participants: current.participants.map((person, index) =>
             current.round?.eligibleVoterIds.includes(person.id)
-              ? person.signal
-                ? { ...person, vote: null, hasVoted: false }
-                : {
+              ? {
                   ...person,
                   vote: person.vote ?? ([1, 2, 4, 4][index] as number),
                   hasVoted: true,
@@ -690,10 +617,7 @@ export function LiveRoom({
                 : item.finalEstimate,
             groomingOutcome:
               item.id === current.activeItemId ? "ready" : item.groomingOutcome,
-            groomingNote:
-              item.id === current.activeItemId
-                ? String(payload.note || "") || null
-                : item.groomingNote,
+            groomingNote: item.id === current.activeItemId ? null : item.groomingNote,
             decidedAt:
               item.id === current.activeItemId
                 ? decidedAt
@@ -721,7 +645,7 @@ export function LiveRoom({
           })),
         };
       }
-      if (action === "outcome") {
+      if (action === "skip") {
         const currentActive = current.queue.find(
           (item) => item.id === current.activeItemId,
         );
@@ -752,12 +676,9 @@ export function LiveRoom({
                   : item.status,
             groomingOutcome:
               item.id === current.activeItemId
-                ? (payload.outcome as GroomingOutcome)
+                ? "skipped"
                 : item.groomingOutcome,
-            groomingNote:
-              item.id === current.activeItemId
-                ? String(payload.note || "") || null
-                : item.groomingNote,
+            groomingNote: item.id === current.activeItemId ? null : item.groomingNote,
             decidedAt:
               item.id === current.activeItemId
                 ? decidedAt
@@ -812,29 +733,6 @@ export function LiveRoom({
           round: null,
         };
       }
-      if (action === "skip") {
-        const currentActive = current.queue.find(
-          (item) => item.id === current.activeItemId,
-        );
-        const next = current.queue.find(
-          (item) =>
-            item.position > (currentActive?.position ?? -1) &&
-            item.status === "pending",
-        );
-        return {
-          ...current,
-          activeItemId: next?.id ?? null,
-          queue: current.queue.map((item) => ({
-            ...item,
-            status:
-              item.id === current.activeItemId
-                ? "skipped"
-                : item.id === next?.id
-                  ? "active"
-                  : item.status,
-          })),
-        };
-      }
       return current;
     });
   }
@@ -847,8 +745,7 @@ export function LiveRoom({
     setError(null);
     if (demoMode) {
       demoAction(actionName, payload);
-      if (["activate", "finalize", "outcome", "finish"].includes(actionName)) {
-        setDecisionNote("");
+      if (["activate", "finalize", "skip", "finish"].includes(actionName)) {
         setFinalEstimate(null);
       }
       return;
@@ -882,7 +779,6 @@ export function LiveRoom({
         }
         if (data.snapshot) {
           if (data.snapshot.activeItemId !== snapshot.activeItemId) {
-            setDecisionNote("");
             setFinalEstimate(null);
           }
           setSnapshot(data.snapshot);
@@ -1116,7 +1012,6 @@ export function LiveRoom({
       event.preventDefault();
       void action("finalize", {
         estimate: selectedFinalEstimate,
-        note: decisionNote,
       });
     }
   });
@@ -1429,12 +1324,8 @@ export function LiveRoom({
                     type="button"
                   >
                     <span className="ticket-index">
-                      {item.groomingOutcome === "needs-work" ? (
-                        <MessageSquareText size={15} />
-                      ) : item.groomingOutcome === "split" ? (
-                        <Scissors size={15} />
-                      ) : item.groomingOutcome === "parked" ? (
-                        <PauseCircle size={15} />
+                      {item.status === "skipped" ? (
+                        <SkipForward size={15} />
                       ) : item.status === "estimated" ? (
                         <CheckCircle2 size={15} />
                       ) : (
@@ -1536,23 +1427,6 @@ export function LiveRoom({
                     <span>Owner · {activeItem.assigneeName}</span>
                   )}
                 </div>
-                <section className="readiness-panel" aria-label="Grooming readiness">
-                  <div>
-                    <ListChecks size={16} />
-                    <b>Ready to discuss</b>
-                    <span>
-                      {readiness.filter((check) => check.ready).length}/{readiness.length}
-                    </span>
-                  </div>
-                  <div className="readiness-checks">
-                    {readiness.map((check) => (
-                      <span className={check.ready ? "ready" : "missing"} key={check.id}>
-                        {check.ready ? <Check size={12} /> : <X size={12} />}
-                        {check.label}
-                      </span>
-                    ))}
-                  </div>
-                </section>
                 {figmaAttachments.length > 0 && (
                   <section className="figma-designs">
                     <div className="section-label">Figma</div>
@@ -1654,7 +1528,7 @@ export function LiveRoom({
                   <span>
                     {eligibleVoterCount === 0
                       ? `Round ${snapshot.round?.number ?? "—"} · No voters yet`
-                      : `Round ${snapshot.round?.number ?? "—"} · ${submittedVoteCount}/${eligibleVoterCount} ready`}
+                      : `Round ${snapshot.round?.number ?? "—"} · ${submittedVoteCount}/${eligibleVoterCount} voted`}
                     {activeItem && (
                       <ElapsedTimer
                         activeStartedAt={activeItem.activeStartedAt}
@@ -1676,7 +1550,7 @@ export function LiveRoom({
                           }
                           aria-label={`${card.label} points${index < 9 ? `, shortcut ${index + 1}` : ""}`}
                           aria-pressed={me?.hasVoted && me.vote === card.value}
-                          disabled={!canVote || voteBusy || signalBusy}
+                          disabled={!canVote || voteBusy}
                           key={card.value}
                           onClick={() => void vote(card.value)}
                           type="button"
@@ -1686,18 +1560,6 @@ export function LiveRoom({
                         </button>
                       ))}
                     </div>
-                    <button
-                      aria-pressed={me?.signal === "needs-context"}
-                      className={`context-signal-button ${me?.signal ? "active" : ""}`}
-                      disabled={!canVote || voteBusy || signalBusy}
-                      onClick={() => void toggleContextSignal()}
-                      type="button"
-                    >
-                      <CircleHelp size={15} />
-                      {me?.signal === "needs-context"
-                        ? "Context requested — clear"
-                        : "I need more context"}
-                    </button>
                   </div>
                 ) : isFacilitator ? (
                   <div
@@ -1715,7 +1577,7 @@ export function LiveRoom({
                           ? "Review the suggested result and set the final estimate."
                           : eligibleVoterCount === 0
                             ? "Invite teammates, or set the estimate yourself when discussion is done."
-                          : "Votes reveal automatically when every voter is ready."}
+                          : "Votes reveal automatically when everyone has voted."}
                       </span>
                     </div>
                     {eligibleVoterCount === 0 && !revealed && (
@@ -1788,21 +1650,6 @@ export function LiveRoom({
 
           {isFacilitator && activeItem && (
             <div className="facilitator-controls">
-              {contextParticipants.length > 0 && (
-                <div className="context-alert" role="status">
-                  <CircleHelp size={15} />
-                  <span>
-                    <b>
-                      {contextParticipants.length}{" "}
-                      {contextParticipants.length === 1 ? "person needs" : "people need"}{" "}
-                      context
-                    </b>
-                    <small>
-                      {contextParticipants.map((person) => person.name).join(", ")}
-                    </small>
-                  </span>
-                </div>
-              )}
               {revealed ? (
                 <>
                   <div className="result-label">
@@ -1854,18 +1701,6 @@ export function LiveRoom({
                   </button>
                 </>
               )}
-              <label className="decision-note">
-                <span>
-                  <MessageSquareText size={14} /> Decision note
-                </span>
-                <textarea
-                  maxLength={2000}
-                  onChange={(event) => setDecisionNote(event.target.value)}
-                  placeholder="Optional. Notes are added to the Linear issue."
-                  rows={3}
-                  value={decisionNote}
-                />
-              </label>
               {revealed && (
                 <>
                   <button
@@ -1874,12 +1709,11 @@ export function LiveRoom({
                     onClick={() =>
                       void action("finalize", {
                         estimate: selectedFinalEstimate,
-                        note: decisionNote,
                       })
                     }
                     type="button"
                   >
-                    Estimate &amp; mark ready <SkipForward size={15} />
+                    Save estimate &amp; next <Check size={15} />
                   </button>
                   <button
                     className="text-action"
@@ -1891,44 +1725,14 @@ export function LiveRoom({
                   </button>
                 </>
               )}
-              <div className="grooming-outcomes">
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    void action("outcome", {
-                      outcome: "needs-work",
-                      note: decisionNote,
-                    })
-                  }
-                  type="button"
-                >
-                  <MessageSquareText size={14} /> Needs details
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    void action("outcome", {
-                      outcome: "split",
-                      note: decisionNote,
-                    })
-                  }
-                  type="button"
-                >
-                  <Scissors size={14} /> Split
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    void action("outcome", {
-                      outcome: "parked",
-                      note: decisionNote,
-                    })
-                  }
-                  type="button"
-                >
-                  <PauseCircle size={14} /> Park
-                </button>
-              </div>
+              <button
+                className="text-action skip-ticket-action"
+                disabled={busy}
+                onClick={() => void action("skip")}
+                type="button"
+              >
+                <SkipForward size={14} /> Skip ticket
+              </button>
             </div>
           )}
         </aside>
@@ -1959,7 +1763,7 @@ function WaitingRoom({
       <h1>{title}</h1>
       <p>
         {participantCount} {participantCount === 1 ? "person is" : "people are"}{" "}
-        here · {ticketCount} {ticketCount === 1 ? "ticket" : "tickets"} ready
+        here · {ticketCount} {ticketCount === 1 ? "ticket" : "tickets"} queued
       </p>
       <div className="waiting-participants" aria-label="Joined participants">
         {participants.map((person) => (
@@ -2033,13 +1837,9 @@ function ElapsedTimer({
 function groomingOutcomeLabel(outcome: GroomingOutcome | null) {
   switch (outcome) {
     case "ready":
-      return "Ready";
-    case "needs-work":
-      return "Needs details";
-    case "split":
-      return "Split";
-    case "parked":
-      return "Parked";
+      return "Estimated";
+    case "skipped":
+      return "Skipped";
     default:
       return "Not discussed";
   }
@@ -2081,15 +1881,14 @@ function SessionSummary({
         (item.status === "estimated"
           ? "ready"
           : item.status === "skipped"
-            ? "parked"
+            ? "skipped"
             : null);
       const estimate =
         item.finalEstimate === null ? "" : ` · ${voteLabel(item.finalEstimate, cards)}`;
-      const note = item.groomingNote ? ` — ${item.groomingNote}` : "";
       const duration = item.elapsedSeconds
         ? ` · ${formatDuration(item.elapsedSeconds)}`
         : "";
-      return `${item.identifier}: ${groomingOutcomeLabel(outcome)}${estimate}${duration}${note}`;
+      return `${item.identifier}: ${groomingOutcomeLabel(outcome)}${estimate}${duration}`;
     }),
   ].join("\n");
 
@@ -2107,7 +1906,7 @@ function SessionSummary({
           <p className="step-label">GROOMING SUMMARY</p>
           <h1>{remaining.length ? "Finished for now." : "That’s the queue."}</h1>
           <p>
-            {items.filter((item) => item.groomingOutcome === "ready" || item.status === "estimated").length} ready ·{" "}
+            {items.filter((item) => item.groomingOutcome === "ready" || item.status === "estimated").length} estimated ·{" "}
             {remaining.length} remaining ·{" "}
             <ElapsedTimer
               activeStartedAt={sessionActiveStartedAt}
@@ -2123,14 +1922,13 @@ function SessionSummary({
             (item.status === "estimated"
               ? "ready"
               : item.status === "skipped"
-                ? "parked"
+                ? "skipped"
                 : null);
           return (
             <a href={item.url} key={item.id} rel="noreferrer" target="_blank">
               <div>
                 <b>{item.identifier}</b>
                 <span>{item.title}</span>
-                {item.groomingNote && <small>{item.groomingNote}</small>}
               </div>
               <em className={outcome ?? "pending"}>
                 {groomingOutcomeLabel(outcome)}
@@ -2214,14 +2012,8 @@ function Participant({
           </small>
         )}
       </div>
-      <span
-        aria-label={person.signal === "needs-context" ? `${person.name} needs context` : undefined}
-        className={`vote-status ${person.hasVoted ? "done" : ""} ${person.signal ? "signal" : ""} ${revealed ? "revealed" : ""}`}
-        title={person.signal === "needs-context" ? "Needs more context" : undefined}
-      >
-        {person.signal === "needs-context" ? (
-          <CircleHelp size={14} />
-        ) : revealed && person.vote !== null ? (
+      <span className={`vote-status ${person.hasVoted ? "done" : ""} ${revealed ? "revealed" : ""}`}>
+        {revealed && person.vote !== null ? (
           voteLabel(person.vote, cards)
         ) : person.hasVoted ? (
           <Check size={14} />

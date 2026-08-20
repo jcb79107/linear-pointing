@@ -3,7 +3,7 @@ import {
   Check,
   Code2,
   ListChecks,
-  MessageSquareText,
+  TimerReset,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -32,26 +32,26 @@ export default function Home() {
 
       <section className="hero">
         <div className="hero-copy">
-          <p className="eyebrow"><ListChecks size={14} /> BUILT FOR LINEAR GROOMING</p>
+          <p className="eyebrow"><ListChecks size={14} /> LIGHTWEIGHT POINTING FOR LINEAR</p>
           <h1>
-            Point the next cycle. <span>Keep the team moving.</span>
+            Point issues. <span>Update Linear. Keep moving.</span>
           </h1>
           <p>
-            Pull a ready-to-groom queue from Linear, let everyone review at
-            their own pace, reveal together, and write the final estimate back.
+            Create a room from your next cycle, share one link, vote, and write
+            the estimate back. No duplicate backlog. No meeting-suite bloat.
           </p>
           <div className="hero-actions">
-            <Link className="button button-primary button-large" href="/demo">
-              Try the interactive demo <ArrowRight size={18} />
+            <Link className="button button-primary button-large" href="/app">
+              Connect Linear <ArrowRight size={18} />
             </Link>
-            <Link className="landing-connect-link" href="/app">
-              Connect your Linear workspace
+            <Link className="landing-connect-link" href="/setup">
+              Self-host with your coding agent
             </Link>
           </div>
           <div className="landing-trust">
             <span><Check size={13} /> Free and open source</span>
-            <span><Check size={13} /> Linear-only by design</span>
-            <span><Check size={13} /> No Jira-shaped clutter</span>
+            <span><Check size={13} /> Linear stays the source of truth</span>
+            <span><Check size={13} /> Desktop and phone friendly</span>
           </div>
         </div>
 
@@ -73,10 +73,10 @@ export default function Home() {
               <small>API-342 · HIGH · TODO</small>
               <h3>Retry failed webhook deliveries</h3>
               <p>
-                Review the Linear description, acceptance criteria, sub-issues,
-                and linked Figma before pointing.
+                Everyone can read the full Linear ticket and linked Figma on
+                their own screen before voting.
               </p>
-              <div className="mock-tags"><span>4/4 ready</span><span>Figma</span></div>
+              <div className="mock-tags"><span>Figma attached</span></div>
               <div className="mock-cards">
                 {[0, 1, 2, 3, 5].map((value) => (
                   <span className={value === 3 ? "selected" : ""} key={value}>
@@ -99,9 +99,9 @@ export default function Home() {
       </section>
 
       <section className="value-strip" aria-label="How it works">
-        <article><ListChecks size={21} /><div><b>Prepare from Linear</b><p>Load the upcoming cycle and To-do tickets, then reorder the agenda.</p></div></article>
-        <article><Users size={21} /><div><b>Review and point together</b><p>Each teammate reads the ticket and Figma on their own device before voting.</p></div></article>
-        <article><MessageSquareText size={21} /><div><b>Decide and move on</b><p>Round up the team average, update Linear, and track time ticket by ticket.</p></div></article>
+        <article><ListChecks size={21} /><div><b>Start from Linear</b><p>Pull the upcoming cycle and Todo tickets, then set the meeting order.</p></div></article>
+        <article><Users size={21} /><div><b>Review on any device</b><p>Each teammate gets the actual Linear issue and linked Figma on their own screen.</p></div></article>
+        <article><TimerReset size={21} /><div><b>Vote, write back, next</b><p>Use the rounded-up team average, save it to Linear, and keep moving.</p></div></article>
       </section>
     </main>
   );

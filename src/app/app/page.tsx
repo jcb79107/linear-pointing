@@ -1,5 +1,4 @@
 import { ArrowRight, LogIn } from "lucide-react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Brand } from "@/components/Brand";
@@ -46,9 +45,6 @@ export default async function AppHome({
           >
             <LogIn size={18} /> Continue with Linear <ArrowRight size={18} />
           </a>
-          <Link className="button button-ghost" href="/demo">
-            Try the interactive demo
-          </Link>
           <small>
             Read access is used to show tickets. Session facilitators also grant
             write access so the final estimate can be applied.

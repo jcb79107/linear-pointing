@@ -221,10 +221,17 @@ export function DashboardClient({
             <div className="empty-sessions">
               <CircleDot size={24} />
               <b>No pointing sessions yet</b>
-              <p>Your first prepared queue will appear here.</p>
-              <Link className="button button-ghost" href="/demo">
-                Try the demo room
-              </Link>
+              <p>Create a session, pull in Linear tickets, and share the room.</p>
+              <button
+                className="button button-ghost"
+                onClick={() => {
+                  setTitle(suggestedSessionTitle());
+                  setCreating(true);
+                }}
+                type="button"
+              >
+                <Plus size={15} /> Create your first session
+              </button>
             </div>
           ) : (
             <div className="session-list">

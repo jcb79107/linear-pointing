@@ -2,11 +2,7 @@ export type SessionStatus = "draft" | "live" | "ended";
 export type QueueItemStatus = "pending" | "active" | "estimated" | "skipped";
 export type ParticipantRole = "facilitator" | "voter" | "observer";
 export type RoundStatus = "voting" | "revealed" | "finalized" | "abandoned";
-export type GroomingOutcome =
-  | "ready"
-  | "needs-work"
-  | "split"
-  | "parked";
+export type GroomingOutcome = "ready" | "skipped";
 export type EstimateScaleType =
   | "notUsed"
   | "exponential"

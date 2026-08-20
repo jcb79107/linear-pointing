@@ -46,7 +46,6 @@ import type {
 import { voteLabel } from "@/lib/estimates";
 import type { LinearIssueFilterOptions } from "@/lib/linear";
 import { sortQueueItems } from "@/lib/queue-sort";
-import { contextReadinessScore, readinessScore } from "@/lib/readiness";
 
 function initials(name: string) {
   return name
@@ -68,7 +67,6 @@ function SortableQueueRow({
   onRemove: () => void;
   cards: EstimateCard[];
 }) {
-  const readiness = readinessScore(item);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id });
   return (
@@ -90,8 +88,7 @@ function SortableQueueRow({
       <div>
         <b>{item.title}</b>
         <small>
-          {item.identifier} · {item.priorityLabel ?? "No priority"} ·{" "}
-          {readiness.ready}/{readiness.total} ready
+          {item.identifier} · {item.priorityLabel ?? "No priority"}
         </small>
       </div>
       <span className="estimate-pill">
@@ -137,9 +134,6 @@ export function QueueBuilder({
   const [stateTypes, setStateTypes] = useState(settings.stateTypes);
   const [estimateScope, setEstimateScope] = useState(settings.estimateScope);
   const [assigneeScope, setAssigneeScope] = useState(settings.assigneeScope);
-  const [readinessFilter, setReadinessFilter] = useState<
-    "any" | "ready" | "missing"
-  >("any");
   const [sortPreset, setSortPreset] = useState<QueueSortPreset>(
     settings.defaultSort,
   );
@@ -206,14 +200,6 @@ export function QueueBuilder({
     });
   }
 
-  function matchesReadinessFilter(issue: LinearIssueSummary) {
-    if (readinessFilter === "any") return true;
-    const score = contextReadinessScore(issue);
-    return readinessFilter === "ready"
-      ? score.ready === score.total
-      : score.ready < score.total;
-  }
-
   async function refreshSnapshot(): Promise<SessionQueueItem[]> {
     const response = await fetch(
       `/api/sessions/${initialSnapshot.id}/snapshot`,
@@ -241,10 +227,7 @@ export function QueueBuilder({
       if (!response.ok) throw new Error(data.error);
       const queued = new Set(queue.map((item) => item.linearIssueId));
       setResults(
-        data.issues.filter(
-          (issue: LinearIssueSummary) =>
-            !queued.has(issue.id) && matchesReadinessFilter(issue),
-        ),
+        data.issues.filter((issue: LinearIssueSummary) => !queued.has(issue.id)),
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Search failed");
@@ -314,10 +297,7 @@ export function QueueBuilder({
 
       const queuedIds = new Set(queue.map((item) => item.linearIssueId));
       const issueIds = (searchData.issues as LinearIssueSummary[])
-        .filter(
-          (issue) =>
-            !queuedIds.has(issue.id) && matchesReadinessFilter(issue),
-        )
+        .filter((issue) => !queuedIds.has(issue.id))
         .slice(0, 1000)
         .map((issue) => issue.id);
       if (!issueIds.length) {
@@ -473,11 +453,6 @@ export function QueueBuilder({
     : null;
   const allResultsSelected =
     results.length > 0 && results.every((issue) => selected.has(issue.id));
-  const fullyReadyCount = queue.filter((item) => {
-    const score = readinessScore(item);
-    return score.ready === score.total;
-  }).length;
-
   async function startSession() {
     setBusy(true);
     setError(null);
@@ -586,9 +561,7 @@ export function QueueBuilder({
           </div>
           <div className="queue-stat">
             <b>{queue.length}</b>
-            <span>
-              issues queued · {fullyReadyCount} ready
-            </span>
+            <span>{queue.length === 1 ? "issue queued" : "issues queued"}</span>
             <em>
               <Users size={13} /> {participants.length} joined
             </em>
@@ -718,21 +691,6 @@ export function QueueBuilder({
                       <option value="anyone">Anyone</option>
                       <option value="me">Assigned to me</option>
                       <option value="unassigned">Unassigned</option>
-                    </select>
-                  </label>
-                  <label>
-                    Grooming context
-                    <select
-                      onChange={(event) =>
-                        setReadinessFilter(
-                          event.target.value as typeof readinessFilter,
-                        )
-                      }
-                      value={readinessFilter}
-                    >
-                      <option value="any">Any readiness</option>
-                      <option value="ready">Description + criteria ready</option>
-                      <option value="missing">Missing core context</option>
                     </select>
                   </label>
                 </div>
@@ -874,7 +832,7 @@ export function QueueBuilder({
                   </b>
                   <p>
                     {queuedMatch
-                      ? `${queuedMatch.identifier} is already ready for the meeting.`
+                      ? `${queuedMatch.identifier} is already in this agenda.`
                       : hasSearched
                       ? "Try another title or ticket ID."
                       : "Search by title or ticket ID using the filters above."}
@@ -896,7 +854,6 @@ export function QueueBuilder({
               ) : (
                 results.map((issue) => {
                   const checked = selected.has(issue.id);
-                  const context = contextReadinessScore(issue);
                   return (
                     <button
                       className={`issue-result ${checked ? "selected" : ""}`}
@@ -918,8 +875,7 @@ export function QueueBuilder({
                         <b>{issue.title}</b>
                         <small>
                           {issue.identifier} ·{" "}
-                          {issue.priorityLabel ?? "No priority"} · {context.ready}/
-                          {context.total} context
+                          {issue.priorityLabel ?? "No priority"}
                         </small>
                       </div>
                       <span>
