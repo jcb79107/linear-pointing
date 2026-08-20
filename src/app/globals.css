@@ -7434,7 +7434,7 @@ h3,
   display: inline-flex;
   min-height: 36px;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 4px;
   color: var(--ink-subtle);
   font-size: 13px;
   font-weight: 500;
@@ -7446,15 +7446,17 @@ h3,
 
 .landing-hero {
   width: min(1280px, calc(100% - 48px));
-  margin: 92px auto 72px;
+  margin: 76px auto 64px;
 }
 
 .landing-hero-copy {
-  max-width: 760px;
+  max-width: 920px;
+  margin: 0 auto;
+  text-align: center;
 }
 
 .landing-kicker {
-  margin: 0 0 18px;
+  margin: 0 0 20px;
   color: var(--ink-subtle);
   font-size: 12px;
   font-weight: 600;
@@ -7462,17 +7464,17 @@ h3,
 }
 
 .landing-hero h1 {
-  margin: 0;
+  margin: 0 auto;
   color: var(--ink);
-  font-size: clamp(52px, 6vw, 80px);
+  font-size: clamp(52px, 5.3vw, 76px);
   font-weight: 600;
   letter-spacing: -0.055em;
   line-height: 1;
 }
 
 .landing-summary {
-  max-width: 690px;
-  margin: 26px 0 0;
+  max-width: 650px;
+  margin: 24px auto 0;
   color: var(--muted);
   font-size: 19px;
   letter-spacing: -0.015em;
@@ -7480,6 +7482,8 @@ h3,
 }
 
 .landing-primary-action {
+  display: flex;
+  justify-content: center;
   margin-top: 28px;
 }
 
@@ -7488,7 +7492,7 @@ h3,
   --preview-muted: #77808b;
   --preview-soft: #f6f7f8;
   overflow: hidden;
-  margin-top: 64px;
+  margin-top: 52px;
   border: 1px solid var(--preview-border);
   border-radius: 12px;
   background: #ffffff;
@@ -7927,7 +7931,7 @@ h3,
 
   .landing-hero {
     width: calc(100% - 28px);
-    margin: 54px auto 40px;
+    margin: 48px auto 36px;
   }
 
   .landing-hero h1 {
@@ -7939,7 +7943,7 @@ h3,
   }
 
   .actual-product-preview {
-    margin-top: 44px;
+    margin-top: 38px;
   }
 
   .actual-preview-header {

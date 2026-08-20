@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   Check,
-  Code2,
   Copy,
   Eye,
   SkipForward,
@@ -16,30 +15,27 @@ export default function Home() {
       <nav className="landing-nav" aria-label="Primary navigation">
         <Brand />
         <div className="nav-actions">
-          <Link className="landing-nav-link" href="/setup">
-            Self-host
-          </Link>
           <a
-            className="button button-ghost"
+            className="landing-nav-link"
             href="https://github.com/jcb79107/linear-pointing"
             rel="noreferrer"
             target="_blank"
           >
-            <Code2 size={16} /> View source
+            GitHub
           </a>
-          <Link className="button button-dark" href="/app">
-            Connect Linear <ArrowRight size={16} />
+          <Link className="landing-nav-link" href="/setup">
+            Self-host
           </Link>
         </div>
       </nav>
 
       <section className="landing-hero">
         <div className="landing-hero-copy">
-          <p className="landing-kicker">OPEN SOURCE</p>
-          <h1>Pointing poker for Linear.</h1>
+          <p className="landing-kicker">POINTING POKER FOR LINEAR</p>
+          <h1>Point Linear issues with your team.</h1>
           <p className="landing-summary">
-            Create a room from your next cycle. Share the link. Point the
-            tickets. Estimates go back to Linear.
+            Build the queue from Linear, share the room, and write each
+            estimate back.
           </p>
           <div className="landing-primary-action">
             <Link className="button button-primary button-large" href="/app">

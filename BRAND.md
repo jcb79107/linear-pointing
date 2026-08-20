@@ -55,10 +55,9 @@ Pointed sounds like a focused product manager: calm, direct, and specific.
 
 ### Homepage
 
-**Pointing poker for Linear.**
+**Point Linear issues with your team.**
 
-Create a room from your next cycle. Share the link. Point the tickets.
-Estimates go back to Linear.
+Build the queue from Linear, share the room, and write each estimate back.
 
 ### Compact description
 
