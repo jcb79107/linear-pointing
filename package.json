@@ -40,19 +40,19 @@
     "@electric-sql/pglite": "0.5.8",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ws": "^8.18.1",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "^16.3.7",
     "tailwindcss": "^4",
-    "tsx": "^4.23.1",
-    "typescript": "^5",
-    "vitest": "^4.1.10",
-    "ws": "^8.21.1"
+    "tsx": "^4.23.15",
+    "typescript": "^7",
+    "vitest": "^5.0.2",
+    "ws": "^8.22.0"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {
