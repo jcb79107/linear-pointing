@@ -8687,3 +8687,6 @@ h3,
 .feedback-dialog p { margin: 0; font-size: .85rem; line-height: 1.5; }
 .feedback-dialog p a { text-decoration: underline; }
 .feedback-actions { display: flex; justify-content: flex-end; gap: .75rem; }
+
+.feedback-dialog .button-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+.feedback-dialog .button-primary:hover:not(:disabled) { background: var(--blue-hover); }

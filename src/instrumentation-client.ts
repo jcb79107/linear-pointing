@@ -12,7 +12,8 @@ Sentry.init({
   maxBreadcrumbs: 0,
   tracesSampleRate: 0,
   replaysSessionSampleRate: 0,
-  replaysOnErrorSampleRate: 0,
+  // Start/restart a local buffer automatically; beforeErrorSampling blocks error-triggered uploads.
+  replaysOnErrorSampleRate: 1,
   beforeSendLog: () => null,
   beforeSendMetric: () => null,
   beforeSend: sanitizeSentryEvent,
@@ -37,5 +38,3 @@ Sentry.addEventProcessor((event, hint) => sanitizeSentryEvent({
   ...event, tags: { ...event.tags, page: window.location.pathname },
 }, hint));
 
-// A rolling local buffer; only submitting feedback flushes it to Sentry.
-if (dsn) Sentry.getReplay()?.startBuffering();

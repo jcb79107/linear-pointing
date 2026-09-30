@@ -44,8 +44,8 @@ export function FeedbackButton({ compact = false }: { compact?: boolean }) {
       <form ref={form} onSubmit={submit}>
         <h2 id={titleId}>Send feedback</h2>
         <label>What happened, or what would you change?<textarea name="message" required maxLength={5000} rows={5} /></label>
-        <label>Email <span>(optional, for a reply)</span><input name="email" type="email" maxLength={254} autoComplete="email" /></label>
-        <label>Screenshot <span>(optional)</span><input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => {
+        <label><span>Email (optional, for a reply)</span><input name="email" type="email" maxLength={254} autoComplete="email" /></label>
+        <label><span>Screenshot (optional)</span><input name="screenshot" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => {
           const file = event.target.files?.[0];
           if (file && (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024)) {
             setError("Choose a PNG, JPG, or WebP image under 5 MB."); event.target.value = ""; setScreenshot(undefined); return;
