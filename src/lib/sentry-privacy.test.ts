@@ -32,7 +32,7 @@ describe("Sentry privacy boundary", () => {
   it("supports anonymous feedback and drops all other telemetry categories", () => {
     expect(sanitizeSentryEvent({ type: "feedback", contexts: { feedback: { message: "Hello" } } })?.contexts?.feedback).not.toHaveProperty("contact_email");
     expect(sanitizeSentryEvent({ type: "transaction" })).toBeNull();
-    expect(sanitizeSentryEvent({ type: "replay_event" })).toBeNull();
+    expect(sanitizeSentryEvent({ type: "replay_event" })?.type).toBe("replay_event");
     expect(privateDataCollection).toMatchObject({ userInfo: false, httpBodies: [], cookies: false, stackFrameVariables: false });
   });
   it.each([["/s/secret", "/s/[code]"], ["/app/sessions/secret/prepare?token=secret", "/app/sessions/[id]/prepare"], ["/api/auth/linear/callback?code=secret", "/api/[route]"], ["/unknown/secret", "/[page]"]])("normalizes %s", (url, expected) => {
@@ -62,4 +62,15 @@ it("filters real SDK error and feedback envelopes before transport", async () =>
   expect(JSON.stringify(envelopes)).toContain("Explicit feedback");
   expect(JSON.stringify(envelopes)).toContain("reply@example.com");
   await Sentry.close();
+});
+
+it("preserves a submitted screenshot and valid replay link while dropping other attachments", () => {
+  const hint: EventHint = { attachments: [
+    { filename: "screenshot", contentType: "image/png", data: new Uint8Array([1, 2]) },
+    { filename: "secret.txt", contentType: "text/plain", data: "credentials" },
+  ] };
+  const clean = sanitizeSentryEvent({ type: "feedback", contexts: { feedback: { message: "Button overlaps", replay_id: "a".repeat(32) } } }, hint);
+  expect(clean?.contexts?.feedback?.replay_id).toBe("a".repeat(32));
+  expect(hint.attachments).toHaveLength(1);
+  expect(hint.attachments?.[0].contentType).toBe("image/png");
 });

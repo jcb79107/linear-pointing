@@ -18,20 +18,17 @@ Sentry.init({
   beforeSend: sanitizeSentryEvent,
   integrations: (defaults) => [
     ...defaults.filter((integration) => !["Breadcrumbs", "BrowserSession", "HttpContext"].includes(integration.name)),
-    Sentry.feedbackIntegration({
-      autoInject: false,
-      showName: false,
-      showEmail: true,
-      isEmailRequired: false,
-      enableScreenshot: false,
-      useSentryUser: { name: "", email: "" },
-      colorScheme: "system",
-      formTitle: "Send feedback",
-      submitButtonLabel: "Send feedback",
-      emailLabel: "Email (optional, for a reply)",
-      messageLabel: "What happened, or what would you change?",
-      messagePlaceholder: "Please leave out private ticket content and credentials. Your message is sent to Pointed’s maintainer through Sentry.",
-      successMessageText: "Thanks — your feedback was sent.",
+    Sentry.replayIntegration({
+      maskAllText: false,
+      maskAllInputs: true,
+      blockAllMedia: true,
+      stickySession: false,
+      minReplayDuration: 0,
+      networkDetailAllowUrls: [],
+      networkCaptureBodies: false,
+      beforeErrorSampling: () => false,
+      // Keep the visual interaction recording, not console or network payloads.
+      beforeAddRecordingEvent: () => null,
     }),
   ],
 });
@@ -39,3 +36,6 @@ Sentry.init({
 Sentry.addEventProcessor((event, hint) => sanitizeSentryEvent({
   ...event, tags: { ...event.tags, page: window.location.pathname },
 }, hint));
+
+// A rolling local buffer; only submitting feedback flushes it to Sentry.
+if (dsn) Sentry.getReplay()?.startBuffering();

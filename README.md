@@ -175,5 +175,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [release
 ## Error reporting and feedback
 
 The hosted app uses Sentry for privacy-filtered errors and optional user feedback.
-Replay and screenshots are disabled. Self-hosted installs can opt in using the
+Feedback submissions include a recent replay and support optional screenshot attachments. Replay stays buffered locally until submission; canceling sends nothing. Self-hosted installs can opt in using the
 variables in `.env.example`; see [Sentry setup and data boundaries](docs/launch/SENTRY.md).
