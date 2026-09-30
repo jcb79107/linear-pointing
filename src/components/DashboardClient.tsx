@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { FeedbackButton } from "@/components/FeedbackButton";
 import { Brand } from "@/components/Brand";
 import type {
   LinearTeamSummary,
@@ -101,6 +102,7 @@ export function DashboardClient({
       <header className="app-header">
         <Brand />
         <div className="header-user">
+          <FeedbackButton compact />
           <span>{initials(user.name)}</span>
           <div>
             <b>{user.name}</b>
