@@ -123,7 +123,10 @@ font-family: "SF Pro Text", "SF Pro Display", Inter, ui-sans-serif,
 - Marketing: two columns on desktop, one below 1024px.
 - Product cards: two columns where space allows, one below tablet width.
 - Live room: preserve the issue as the primary pane; agenda and room collapse
-  through the existing mobile controls.
+  through the existing mobile controls. At 700px and below, the document owns
+  scrolling: ticket, votes, and facilitator controls stay in normal flow rather
+  than competing for a fixed viewport. Short landscape windows also allow page
+  scrolling. Changing tickets returns the reader to the new ticket's title.
 - Mobile display type scales toward 38px.
 - All frequent touch actions remain at least 44px high.
 
