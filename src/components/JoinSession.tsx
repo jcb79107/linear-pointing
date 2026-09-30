@@ -1,12 +1,19 @@
 "use client";
 
-import { ArrowRight, LoaderCircle, RotateCcw } from "lucide-react";
+import { ArrowRight, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { PointedMark } from "@/components/Brand";
 import { requestJson } from "@/lib/client-request";
 
-export function JoinSession({ code }: { code: string }) {
+export function JoinSession({
+  code,
+  session,
+}: {
+  code: string;
+  session: { title: string; teamName: string; issueCount: number };
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -46,7 +53,7 @@ export function JoinSession({ code }: { code: string }) {
         {error ? (
           <>
             <span className="join-icon error">!</span>
-            <h1>Couldn’t enter the room.</h1>
+            <h1>Couldn’t join {session.title}.</h1>
             <p>{error}</p>
             <button
               className="button button-primary"
@@ -65,10 +72,13 @@ export function JoinSession({ code }: { code: string }) {
         ) : (
           <>
             <span className="join-icon">
-              <LoaderCircle className="spin" size={25} />
+              <PointedMark className="spin" size={28} />
             </span>
-            <h1>Joining the room…</h1>
-            <p>Checking your Linear workspace and team access.</p>
+            <h1>Joining {session.title}…</h1>
+            <p>
+              Checking access to {session.teamName} and loading {session.issueCount}{" "}
+              {session.issueCount === 1 ? "ticket" : "tickets"}.
+            </p>
           </>
         )}
       </section>

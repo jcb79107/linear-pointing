@@ -25,15 +25,24 @@ export function apiError(error: unknown): Response {
       { status: 422 },
     );
   }
-  console.error(error);
+  const reference = crypto.randomUUID();
+  // Provider errors may embed SQL, ticket content, or credentials. Log only a
+  // correlation ID; never forward raw exception text to clients or shared logs.
+  console.error(JSON.stringify({ event: "api_error", reference }));
   return Response.json(
-    { error: error instanceof Error ? error.message : "Unexpected error" },
+    { error: `Something went wrong. Try again. Reference: ${reference}`, reference },
     { status: 500 },
   );
 }
 
 export function safeReturnTo(value: string | null): string {
-  if (!value?.startsWith("/") || value.startsWith("//")) return "/app";
+  // Reject URL parser normalization that could turn a local path into another origin.
+  if (
+    !value?.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    /\s/.test(value)
+  ) return "/app";
   return value;
 }
 

@@ -21,7 +21,7 @@ import type {
   SessionStatus,
   UserSettings,
 } from "@/lib/domain";
-import { presetPointValues } from "@/lib/estimates";
+
 
 interface SessionListItem {
   id: string;
@@ -61,7 +61,6 @@ function suggestedSessionTitle() {
 export function DashboardClient({
   user,
   teams,
-  settings,
   initialSessions,
 }: DashboardClientProps) {
   const router = useRouter();
@@ -110,7 +109,7 @@ export function DashboardClient({
           <Link aria-label="Settings" className="header-icon-link" href="/app/settings">
             <Settings size={16} />
           </Link>
-          <form action="/api/auth/logout" method="post">
+          <form noValidate action="/api/auth/logout" method="post">
             <button aria-label="Sign out" type="submit">
               <LogOut size={16} />
             </button>
@@ -125,7 +124,7 @@ export function DashboardClient({
             <h1>Pointing sessions</h1>
             <p>Create a session, choose its Linear tickets, and share the link.</p>
           </div>
-          <button
+          {!creating && <button
             className="button button-primary button-large"
             onClick={() => {
               setTitle(suggestedSessionTitle());
@@ -134,11 +133,11 @@ export function DashboardClient({
             type="button"
           >
             <Plus size={18} /> New session
-          </button>
+          </button>}
         </div>
 
         {creating && (
-          <form
+          <form noValidate
             className="new-session-panel"
             onSubmit={(event) => {
               event.preventDefault();
@@ -149,13 +148,7 @@ export function DashboardClient({
               <div>
                 <b>New session</b>
                 <p>
-                  Choose the Linear team that owns the tickets. This session
-                  will use {settings.pointingPreset === "linear-team"
-                    ? "that team’s Linear estimate scale"
-                    : presetPointValues(
-                        settings.pointingPreset,
-                        settings.customPointValues,
-                      ).join(", ")}.
+                  Choose a team, then preview its cycle agenda. Estimates use the team’s Linear scale.
                 </p>
               </div>
             </div>
@@ -205,7 +198,7 @@ export function DashboardClient({
                 disabled={!title.trim() || !teamId || busy}
                 type="submit"
               >
-                {busy ? "Creating…" : "Choose tickets"}
+                {busy ? "Creating…" : "Preview agenda"}
                 <ArrowRight size={16} />
               </button>
             </div>
@@ -217,11 +210,21 @@ export function DashboardClient({
             <h2>Your sessions</h2>
             <span>{initialSessions.length} total</span>
           </div>
-          {initialSessions.length === 0 ? (
+          {initialSessions.length === 0 && !creating ? (
             <div className="empty-sessions">
               <CircleDot size={24} />
               <b>No pointing sessions yet</b>
-              <p>Your first prepared queue will appear here.</p>
+              <p>Create a session, pull in Linear tickets, and share the room.</p>
+              <button
+                className="button button-ghost"
+                onClick={() => {
+                  setTitle(suggestedSessionTitle());
+                  setCreating(true);
+                }}
+                type="button"
+              >
+                <Plus size={15} /> Create your first session
+              </button>
             </div>
           ) : (
             <div className="session-list">

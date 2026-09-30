@@ -3,99 +3,116 @@
 import {
   closestCenter,
   DndContext,
-  type DragEndEvent,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
-  ArrowDownAZ,
+  ArrowUp,
   Check,
-  CirclePlus,
+  Copy,
   GripVertical,
-  Search,
-  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-
+import { useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { SlackInviteButton } from "@/components/SlackInviteButton";
+import { TeamDefaultFields } from "@/components/TeamDefaultFields";
+import { requestJson } from "@/lib/client-request";
 import type {
-  EstimateCard,
-  LinearIssueSummary,
   QueueSortPreset,
   SessionQueueItem,
   SessionSnapshot,
-  UserSettings,
+  TeamDefaults,
 } from "@/lib/domain";
-import { voteLabel } from "@/lib/estimates";
-import type { LinearIssueFilterOptions } from "@/lib/linear";
 import { sortQueueItems } from "@/lib/queue-sort";
-import { readinessScore } from "@/lib/readiness";
 
-function SortableQueueRow({
+function QueueRow({
   item,
   index,
-  onRemove,
-  cards,
+  count,
+  busy,
+  move,
+  remove,
 }: {
   item: SessionQueueItem;
   index: number;
-  onRemove: () => void;
-  cards: EstimateCard[];
+  count: number;
+  busy: boolean;
+  move: (to: number) => void;
+  remove: () => void;
 }) {
-  const readiness = readinessScore(item);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: item.id });
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: item.id, disabled: busy });
   return (
     <div
-      className={`queue-edit-row ${isDragging ? "dragging" : ""}`}
+      className="queue-edit-row cycle-queue-row"
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
       <button
-        aria-label={`Drag ${item.identifier} to reorder`}
         className="drag-handle"
         type="button"
+        disabled={busy}
         {...attributes}
         {...listeners}
+        aria-label={`Drag ${item.identifier} to reorder`}
       >
         <GripVertical size={17} />
       </button>
       <span className="queue-number">{String(index + 1).padStart(2, "0")}</span>
-      <div>
+      <div className="cycle-ticket-title">
         <b>{item.title}</b>
         <small>
-          {item.identifier} · {item.priorityLabel ?? "No priority"} ·{" "}
-          {readiness.ready}/{readiness.total} ready
+          {item.identifier} · {item.priorityLabel ?? "No priority"}
         </small>
       </div>
-      <span className="estimate-pill">
-        {item.currentEstimate === null
-          ? "Unpointed"
-          : voteLabel(item.currentEstimate, cards)}
-      </span>
-      <button
-        aria-label={`Remove ${item.identifier}`}
-        className="remove-queue-item"
-        onClick={onRemove}
-        type="button"
-      >
-        <X size={14} />
-      </button>
+      <div className="queue-row-actions">
+        <button
+          aria-label={`Move ${item.identifier} up`}
+          title="Move up"
+          disabled={busy || index === 0}
+          onClick={() => move(index - 1)}
+          type="button"
+        >
+          <ArrowUp size={16} />
+        </button>
+        <button
+          aria-label={`Move ${item.identifier} down`}
+          title="Move down"
+          disabled={busy || index === count - 1}
+          onClick={() => move(index + 1)}
+          type="button"
+        >
+          <ArrowDown size={16} />
+        </button>
+        <button
+          aria-label={`Remove ${item.identifier}`}
+          title="Remove from agenda"
+          disabled={busy}
+          onClick={remove}
+          type="button"
+        >
+          <X size={16} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -105,849 +122,362 @@ export function QueueBuilder({
   settings,
 }: {
   initialSnapshot: SessionSnapshot;
-  settings: UserSettings;
+  settings: TeamDefaults;
 }) {
   const router = useRouter();
-  const [queue, setQueue] = useState(initialSnapshot.queue);
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<LinearIssueFilterOptions | null>(null);
-  const [results, setResults] = useState<LinearIssueSummary[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [hasSearched, setHasSearched] = useState(false);
-  const [activePanel, setActivePanel] = useState<"find" | "queue">("find");
-  const [searching, setSearching] = useState(false);
-  const [bulkAdding, setBulkAdding] = useState(false);
-  const [cycleScope, setCycleScope] = useState(settings.cycleScope);
-  const [customViewId, setCustomViewId] = useState("");
-  const [stateTypes, setStateTypes] = useState(settings.stateTypes);
-  const [estimateScope, setEstimateScope] = useState(settings.estimateScope);
-  const [assigneeScope, setAssigneeScope] = useState(settings.assigneeScope);
-  const [sortPreset, setSortPreset] = useState<QueueSortPreset>(
-    settings.defaultSort,
-  );
-  const [busy, setBusy] = useState(false);
-  const [orderStatus, setOrderStatus] = useState<
-    "idle" | "saving" | "saved"
-  >("idle");
+  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [options, setOptions] = useState(settings);
+  const [order, setOrder] = useState<QueueSortPreset>("manual");
+  const [busy, setBusy] = useState<string | null>(null);
+  const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [confirmAction, setConfirmAction] = useState<
-    "clear-agenda" | "delete-session" | null
-  >(null);
+  const [confirm, setConfirm] = useState<"reload" | "delete" | null>(null);
+  const [copyFallback, setCopyFallback] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
+  const queue = snapshot.queue;
+  const sourceChanged =
+    snapshot.intake && snapshot.intake.cycleOffset !== options.cycleOffset;
+  const inviteUrl =
+    typeof window === "undefined"
+      ? `/s/${snapshot.code}`
+      : `${window.location.origin}/s/${snapshot.code}`;
 
-  useEffect(() => {
-    let active = true;
-    fetch(`/api/linear/filters?teamId=${initialSnapshot.teamId}`)
-      .then(async (response) => {
-        if (!response.ok) return;
-        const data = await response.json();
-        if (active) {
-          setFilters(data.filters);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [initialSnapshot.teamId]);
-
-  function buildIssueParams(fetchAll = false) {
-    return new URLSearchParams({
-      teamId: initialSnapshot.teamId,
-      cycleScope,
-      ...(customViewId ? { customViewId } : {}),
-      stateTypes: stateTypes.join(","),
-      estimateScope,
-      assigneeScope,
-      ...(query ? { query } : {}),
-      ...(fetchAll ? { all: "true" } : {}),
-    });
-  }
-
-  async function refreshSnapshot(): Promise<SessionQueueItem[]> {
-    const response = await fetch(
-      `/api/sessions/${initialSnapshot.id}/snapshot`,
-      { cache: "no-store" },
-    );
-    const data = await response.json();
-    if (response.ok) {
-      setQueue(data.snapshot.queue);
-      return data.snapshot.queue;
-    }
-    return queue;
-  }
-
-  async function searchIssues() {
-    setSearching(true);
-    setError(null);
-    setNotice(null);
-    setSelected(new Set());
-    setHasSearched(true);
-    const params = buildIssueParams();
-    try {
-      const response = await fetch(`/api/linear/issues?${params}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      const queued = new Set(queue.map((item) => item.linearIssueId));
-      setResults(
-        data.issues.filter(
-          (issue: LinearIssueSummary) => !queued.has(issue.id),
-        ),
-      );
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Search failed");
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  async function addSelected() {
-    const issues = results.filter((issue) => selected.has(issue.id));
-    if (!issues.length) return;
-    setBusy(true);
+  async function run(label: string, work: () => Promise<void>) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(label);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(
-        `/api/sessions/${initialSnapshot.id}/queue`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            issueIds: issues.map((issue) => issue.id),
-            stateTypes,
-            estimateScope,
-          }),
-        },
-      );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setSelected(new Set());
-      setResults([]);
-      setQuery("");
-      setHasSearched(false);
-      const refreshed = await refreshSnapshot();
-      await applySort(customViewId ? "manual" : sortPreset, refreshed);
-      setNotice(
-        `Added ${issues.length} ${
-          issues.length === 1 ? "ticket" : "tickets"
-        } to the agenda.`,
-      );
-      setActivePanel("queue");
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not add tickets",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function addMatchingTickets() {
-    setBulkAdding(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const params = buildIssueParams(true);
-      const searchResponse = await fetch(`/api/linear/issues?${params}`);
-      const searchData = await searchResponse.json();
-      if (!searchResponse.ok) throw new Error(searchData.error);
-      const selectedCycle = searchData.selectedCycle;
-      if (cycleScope !== "any" && !selectedCycle) {
-        setNotice(
-          `Linear does not have ${cycleScope === "active" ? "an active" : "an upcoming"} cycle for this team.`,
-        );
-        return;
-      }
-
-      const queuedIds = new Set(queue.map((item) => item.linearIssueId));
-      const issueIds = (searchData.issues as LinearIssueSummary[])
-        .filter((issue) => !queuedIds.has(issue.id))
-        .slice(0, 1000)
-        .map((issue) => issue.id);
-      if (!issueIds.length) {
-        setNotice(
-          "Every ticket matching these filters is already queued.",
-        );
-        return;
-      }
-
-      const addResponse = await fetch(
-        `/api/sessions/${initialSnapshot.id}/queue`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ issueIds, stateTypes, estimateScope }),
-        },
-      );
-      const addData = await addResponse.json();
-      if (!addResponse.ok) throw new Error(addData.error);
-      setSelected(new Set());
-      setResults([]);
-      setQuery("");
-      setHasSearched(false);
-      const refreshed = await refreshSnapshot();
-      await applySort(customViewId ? "manual" : sortPreset, refreshed);
-      setActivePanel("queue");
-      setNotice(
-        `Added ${issueIds.length} matching ${
-          issueIds.length === 1 ? "ticket" : "tickets"
-        }${selectedCycle ? ` from ${selectedCycle.name}` : ""}.`,
-      );
+      await work();
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Could not add matching Linear tickets",
+          : "Something went wrong. Try again.",
       );
     } finally {
-      setBulkAdding(false);
+      inFlight.current = false;
+      setBusy(null);
     }
   }
-
-  async function applySort(
-    preset: QueueSortPreset,
-    items: SessionQueueItem[] = queue,
-  ) {
-    if (!items.length) return;
-    const sorted = sortQueueItems(items, preset, settings.customSortRules).map(
-      (item, position) => ({ ...item, position }),
-    );
-    setSortPreset(preset);
-    setQueue(sorted);
-    await persistOrder(sorted);
-  }
-
-  async function persistOrder(items: SessionQueueItem[]) {
-    setOrderStatus("saving");
-    const response = await fetch(
-      `/api/sessions/${initialSnapshot.id}/queue`,
+  async function request(path: string, method: string, body?: unknown) {
+    const { data, response } = await requestJson<{
+      error?: string;
+      snapshot?: SessionSnapshot;
+    }>(
+      `/api/sessions/${snapshot.id}${path}`,
       {
-        method: "PATCH",
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderedItemIds: items.map((item) => item.id),
-        }),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
+      90_000,
     );
-    if (!response.ok) {
-      const data = await response.json();
-      setError(data.error);
-      await refreshSnapshot();
-      setOrderStatus("idle");
-      return;
-    }
-    setOrderStatus("saved");
-    window.setTimeout(() => setOrderStatus("idle"), 1600);
+    if (!response.ok)
+      throw new Error(data.error ?? "Could not save. Try again.");
+    return data;
   }
-
-  async function removeItem(item: SessionQueueItem) {
-    setError(null);
-    const response = await fetch(
-      `/api/sessions/${initialSnapshot.id}/queue?itemId=${item.id}`,
-      { method: "DELETE" },
-    );
-    if (!response.ok) {
-      const data = await response.json();
-      setError(data.error ?? "Could not remove issue");
-      return;
-    }
-    setQueue((current) =>
-      current
-        .filter((candidate) => candidate.id !== item.id)
-        .map((candidate, position) => ({ ...candidate, position })),
-    );
+  async function refresh() {
+    const result = await request("/snapshot", "GET");
+    if (!result.snapshot)
+      throw new Error("Could not refresh the agenda. Reload this page.");
+    setSnapshot(result.snapshot);
   }
-
-  async function clearAgenda() {
-    if (!queue.length) return;
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = await fetch(
-        `/api/sessions/${initialSnapshot.id}/queue?all=true`,
-        { method: "DELETE" },
+  function load() {
+    setConfirm(null);
+    void run("loading", async () => {
+      const result = await request("/intake", "POST", options);
+      if (!result.snapshot)
+        throw new Error("Could not load the agenda. Try again.");
+      setSnapshot(result.snapshot);
+      setOrder(options.defaultSort);
+      setNotice(
+        `${result.snapshot.queue.length} unestimated tickets loaded. Review the agenda before starting.`,
       );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setQueue([]);
-      setResults([]);
-      setSelected(new Set());
-      setHasSearched(false);
-      setActivePanel("find");
-      setConfirmAction(null);
-      setNotice("Agenda cleared. Your Linear tickets were not changed.");
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not clear the agenda",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = queue.findIndex((item) => item.id === active.id);
-    const newIndex = queue.findIndex((item) => item.id === over.id);
-    const reordered = arrayMove(queue, oldIndex, newIndex).map(
-      (item, position) => ({ ...item, position }),
-    );
-    setQueue(reordered);
-    void persistOrder(reordered);
-  }
-
-  function clearSearch() {
-    setQuery("");
-    setResults([]);
-    setSelected(new Set());
-    setHasSearched(false);
-    setError(null);
-    setNotice(null);
-  }
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const queuedMatch = normalizedQuery
-    ? queue.find(
-        (item) =>
-          item.identifier.toLowerCase() === normalizedQuery ||
-          item.title.toLowerCase().includes(normalizedQuery),
-      )
-    : null;
-  const allResultsSelected =
-    results.length > 0 && results.every((issue) => selected.has(issue.id));
-
-  async function startSession() {
-    setBusy(true);
-    setError(null);
-    const response = await fetch(
-      `/api/sessions/${initialSnapshot.id}/start`,
-      { method: "POST" },
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      setError(data.error);
-      setBusy(false);
-      return;
-    }
-    router.push(`/sessions/${initialSnapshot.id}`);
-  }
-
-  async function deleteSession() {
-    setBusy(true);
-    setError(null);
-    const response = await fetch(`/api/sessions/${initialSnapshot.id}`, {
-      method: "DELETE",
     });
-    if (!response.ok) {
-      const data = await response.json();
-      setError(data.error ?? "Could not delete this session");
-      setBusy(false);
-      return;
-    }
-    setConfirmAction(null);
-    router.push("/app");
   }
-
+  function saveOrder(
+    next: SessionQueueItem[],
+    preset: QueueSortPreset = "manual",
+  ) {
+    void run("order", async () => {
+      await request("/queue", "PATCH", {
+        orderedItemIds: next.map((item) => item.id),
+      });
+      setSnapshot((current) => ({
+        ...current,
+        queue: next.map((item, position) => ({ ...item, position })),
+      }));
+      setOrder(preset);
+      setNotice("Agenda order saved.");
+    });
+  }
+  function dragEnd(event: DragEndEvent) {
+    if (!event.over || event.active.id === event.over.id || busy) return;
+    saveOrder(
+      arrayMove(
+        queue,
+        queue.findIndex((item) => item.id === event.active.id),
+        queue.findIndex((item) => item.id === event.over!.id),
+      ),
+    );
+  }
+  function start() {
+    void run("starting", async () => {
+      await request("/intake", "PATCH", options);
+      await request("/start", "POST");
+      router.push(`/sessions/${snapshot.id}`);
+    });
+  }
   return (
     <main className="prepare-shell">
-      <header className="prepare-header">
-        <div className="prepare-brand">
-          <Brand />
-          <span />
-          <div>
-            <b>{initialSnapshot.title}</b>
-            <small>{initialSnapshot.teamName}</small>
-          </div>
-        </div>
-        <div className="prepare-actions">
-          <button
-            aria-label="Delete draft session"
-            className="button button-ghost prepare-delete"
-            disabled={busy || Boolean(bulkAdding)}
-            onClick={() => setConfirmAction("delete-session")}
-            title="Delete draft session"
-            type="button"
-          >
-            <Trash2 size={16} />
-          </button>
-          <Link className="button button-ghost" href="/app">
+      <header className="app-header">
+        <Brand />
+        <div className="prepare-header-actions">
+          <Link className="button button-ghost" aria-label="Sessions" href="/app">
             <ArrowLeft size={16} /> Sessions
           </Link>
           <button
             className="button button-primary"
-            disabled={!queue.length || busy || Boolean(bulkAdding)}
-            onClick={startSession}
+            disabled={Boolean(busy) || !queue.length || Boolean(sourceChanged)}
+            onClick={start}
             type="button"
           >
-            {busy ? (
-              "Starting…"
-            ) : (
-              <>
-                <span className="desktop-start-label">Start live session</span>
-                <span className="mobile-start-label">Start</span>
-              </>
-            )}
-            {!busy && queue.length > 0 && (
-              <span className="start-count">{queue.length}</span>
-            )}
+            {busy === "starting" ? "Starting…" : "Start session"}
             <ArrowRight size={16} />
           </button>
         </div>
       </header>
-
-      <section className="prepare-main">
+      <section className="prepare-main cycle-prepare">
         <div className="prepare-intro">
           <div>
-            <p className="step-label">BUILD THE AGENDA</p>
-            <h1>What should the team point?</h1>
+            <p className="step-label">{snapshot.teamName}</p>
+            <h1>Preview your agenda</h1>
             <p className="prepare-help">
-              Pull a filtered set from Linear, fine-tune the order, then share
-              the room.
+              Prepare the tickets in Linear. Review the order here, then bring
+              in the team.
             </p>
           </div>
-          <div className="queue-stat">
-            <b>{queue.length}</b>
-            <span>issues queued</span>
-          </div>
         </div>
-
-        {(error || notice) && (
-          <div className="prepare-feedback">
-            {error && <div className="form-error">{error}</div>}
-            {notice && <div className="form-notice">{notice}</div>}
+        <section className="cycle-source-card" aria-label="Session preparation">
+          <TeamDefaultFields
+            value={options}
+            onChange={setOptions}
+            disabled={Boolean(busy)}
+          />
+          <p className="cycle-policy">
+            Unestimated tickets only. Completed and canceled work stays out.
+            Changes here apply to this session.
+          </p>
+          <div className="cycle-source-actions">
+            <button
+              className="button button-primary"
+              disabled={Boolean(busy)}
+              onClick={() => (queue.length ? setConfirm("reload") : load())}
+              type="button"
+            >
+              {busy === "loading"
+                ? "Loading from Linear…"
+                : snapshot.intake
+                  ? "Reload agenda"
+                  : "Load agenda"}
+            </button>
+            <Link href="/app/settings">Edit team defaults</Link>
+          </div>
+          {snapshot.intake && (
+            <div className="cycle-resolved">
+              <b>{snapshot.intake.name}</b>
+              {snapshot.intake.startsAt && snapshot.intake.endsAt && (
+                <span>
+                  {new Date(snapshot.intake.startsAt).toLocaleDateString("en", {
+                    month: "short",
+                    day: "numeric",
+                    timeZone: "UTC",
+                  })}{" "}
+                  –{" "}
+                  {new Date(snapshot.intake.endsAt).toLocaleDateString("en", {
+                    month: "short",
+                    day: "numeric",
+                    timeZone: "UTC",
+                  })}
+                </span>
+              )}
+              {snapshot.intake.cycleId && <small>This agenda stays tied to this cycle.</small>}
+            </div>
+          )}
+          {sourceChanged && (
+            <p role="status">
+              Load the new source before starting. Your current agenda is
+              unchanged.
+            </p>
+          )}
+        </section>
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
           </div>
         )}
-
-        <div className="prepare-panel-tabs">
-          <button
-            className={activePanel === "find" ? "active" : ""}
-            onClick={() => setActivePanel("find")}
-            type="button"
-          >
-            Find tickets
-          </button>
-          <button
-            className={activePanel === "queue" ? "active" : ""}
-            onClick={() => setActivePanel("queue")}
-            type="button"
-          >
-            Agenda <span>{queue.length}</span>
-          </button>
-        </div>
-
-        <div className="prepare-grid">
-          <section
-            className={`issue-finder ${
-              activePanel !== "find" ? "prepare-panel-hidden" : ""
-            }`}
-          >
-            <div className="card-heading">
-              <div>
-                <span className="heading-icon">
-                  <Search size={17} />
-                </span>
-                <div>
-                  <b>Add tickets</b>
-                  <small>Editable Linear filters for this session</small>
-                </div>
-              </div>
-              {selected.size > 0 && (
-                <button
-                  className="button button-dark"
-                  disabled={busy}
-                  onClick={addSelected}
-                  type="button"
-                >
-                  <CirclePlus size={15} /> Add {selected.size} to agenda
-                </button>
-              )}
+        <p className="prepare-save-status" role="status">
+          {busy === "order" ? "Saving order…" : notice}
+        </p>
+        <section
+          className="queue-editor cycle-agenda"
+          aria-label="Agenda preview"
+        >
+          <div className="card-heading">
+            <div>
+              <b>Agenda · {queue.length} tickets</b>
+              <small>Reorder or remove tickets. Linear stays unchanged.</small>
             </div>
-            <div className="quick-add-grid">
-              <section className="quick-add-card filter-card">
-                <span className="quick-add-eyebrow">
-                  <SlidersHorizontal size={13} /> LINEAR INTAKE
-                </span>
-                <b>Add matching tickets</b>
-                <p>
-                  Pull a ready-made batch, or use the same filters to search by
-                  title and identifier.
-                </p>
-                <div className="intake-filter-grid">
-                  <label>
-                    Source
-                    <select
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        if (value.startsWith("view:")) {
-                          setCustomViewId(value.slice(5));
-                          setCycleScope("any");
-                        } else {
-                          setCustomViewId("");
-                          setCycleScope(value as UserSettings["cycleScope"]);
-                        }
-                      }}
-                      value={customViewId ? `view:${customViewId}` : cycleScope}
-                    >
-                      <option value="upcoming">Upcoming cycle</option>
-                      <option value="active">Active cycle</option>
-                      <option value="any">All team tickets</option>
-                      {filters?.customViews.map((view) => (
-                        <option key={view.id} value={`view:${view.id}`}>
-                          View · {view.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Estimates
-                    <select
-                      onChange={(event) =>
-                        setEstimateScope(
-                          event.target.value as UserSettings["estimateScope"],
-                        )
-                      }
-                      value={estimateScope}
-                    >
-                      <option value="unestimated">Unestimated</option>
-                      <option value="estimated">Estimated</option>
-                      <option value="any">Any estimate</option>
-                    </select>
-                  </label>
-                  <label>
-                    Assignee
-                    <select
-                      onChange={(event) =>
-                        setAssigneeScope(
-                          event.target.value as UserSettings["assigneeScope"],
-                        )
-                      }
-                      value={assigneeScope}
-                    >
-                      <option value="anyone">Anyone</option>
-                      <option value="me">Assigned to me</option>
-                      <option value="unassigned">Unassigned</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="intake-statuses">
-                  <span>Status</span>
-                  {([
-                    ["backlog", "Backlog"],
-                    ["unstarted", "Todo"],
-                    ["started", "In Progress"],
-                  ] as const).map(([value, label]) => (
-                    <label key={value}>
-                      <input
-                        checked={stateTypes.includes(value)}
-                        onChange={(event) => {
-                          const next = event.target.checked
-                            ? [...stateTypes, value]
-                            : stateTypes.filter((state) => state !== value);
-                          if (next.length) setStateTypes(next);
-                        }}
-                        type="checkbox"
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-                <div className="backlog-source">
-                  <span>
-                    {customViewId
-                      ? filters?.customViews.find((view) => view.id === customViewId)?.name ?? "Linear view"
-                      : cycleScope === "upcoming"
-                      ? filters?.upcomingCycle?.name ??
-                        (filters ? "No upcoming cycle" : "Finding cycle…")
-                      : cycleScope === "active"
-                        ? filters?.activeCycle?.name ??
-                          (filters ? "No active cycle" : "Finding cycle…")
-                        : "All matching team tickets"}
-                  </span>
-                  <small>
-                    {customViewId
-                      ? "View order"
-                      : sortPreset === "linear"
-                        ? "Linear order"
-                        : "Selected order"}
-                  </small>
-                </div>
-                <button
-                  className="button button-primary"
-                  disabled={
-                    (!customViewId && cycleScope === "upcoming" && !filters?.upcomingCycle) ||
-                    (!customViewId && cycleScope === "active" && !filters?.activeCycle) ||
-                    bulkAdding ||
-                    busy
-                  }
-                  onClick={() => void addMatchingTickets()}
-                  type="button"
-                >
-                  <CirclePlus size={15} />
-                  {bulkAdding ? "Adding matching tickets…" : "Add all matches"}
-                </button>
-              </section>
-            </div>
-            <div className="manual-picker-label">
-              <span>ADD INDIVIDUAL TICKETS</span>
-              {query && (
-                <button onClick={clearSearch} type="button">
-                  Clear search
-                </button>
-              )}
-            </div>
-            <div className="search-controls">
-              <div className="search-input">
-                <Search size={17} />
-                <input
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void searchIssues();
+            {queue.length > 0 && (
+              <label>
+                Order
+                <select
+                  aria-label="Sort agenda"
+                  disabled={Boolean(busy)}
+                  value={order}
+                  onChange={(e) => {
+                    const next = e.target.value as QueueSortPreset;
+                    saveOrder(sortQueueItems(queue, next), next);
                   }}
-                  placeholder="Search title or KEY-123…"
-                  value={query}
-                />
-                {query && (
-                  <button
-                    aria-label="Clear ticket search"
-                    onClick={clearSearch}
-                    type="button"
-                  >
-                    <X size={15} />
-                  </button>
-                )}
-              </div>
-              <button
-                className="button button-dark"
-                disabled={searching}
-                onClick={searchIssues}
-                type="button"
-              >
-                {searching ? "Searching…" : "Search"}
-              </button>
-            </div>
-            {results.length > 0 && (
-              <div className="result-toolbar">
-                <span>
-                  {results.length === 50
-                    ? "50 newest matches"
-                    : `${results.length} ${
-                        results.length === 1 ? "ticket" : "tickets"
-                      }`}
-                </span>
-                <button
-                  onClick={() =>
-                    setSelected(
-                      allResultsSelected
-                        ? new Set()
-                        : new Set(results.map((issue) => issue.id)),
-                    )
-                  }
-                  type="button"
                 >
-                  {allResultsSelected ? "Clear selection" : "Select all"}
-                </button>
-              </div>
+                  <option value="manual">Your agenda order</option>
+                  <option value="linear">Linear manual order</option>
+                  <option value="priority">Priority</option>
+                  <option value="oldest">Oldest first</option>
+                </select>
+              </label>
             )}
-            <div className="issue-results">
-              {searching ? (
-                <div className="finder-empty finder-loading">
-                  <span className="loading-ring" />
-                  <b>Loading tickets from Linear…</b>
-                  <p>Large teams can take a moment.</p>
-                </div>
-              ) : results.length === 0 ? (
-                <div className="finder-empty">
-                  {queuedMatch ? <Check size={21} /> : <Search size={21} />}
-                  <b>
-                    {queuedMatch
-                      ? "Already in the agenda"
-                      : hasSearched
-                      ? "No matching tickets"
-                      : "Find tickets for this session"}
-                  </b>
-                  <p>
-                    {queuedMatch
-                      ? `${queuedMatch.identifier} is already ready for the meeting.`
-                      : hasSearched
-                      ? "Try another title or ticket ID."
-                      : "Search by title or ticket ID using the filters above."}
-                  </p>
-                  {queuedMatch ? (
-                    <button onClick={() => setActivePanel("queue")} type="button">
-                      View agenda
-                    </button>
-                  ) : hasSearched ? (
-                    <button onClick={clearSearch} type="button">
-                      Clear search
-                    </button>
-                  ) : (
-                    <button onClick={searchIssues} type="button">
-                      Load tickets to point
-                    </button>
-                  )}
-                </div>
-              ) : (
-                results.map((issue) => {
-                  const checked = selected.has(issue.id);
-                  return (
-                    <button
-                      className={`issue-result ${checked ? "selected" : ""}`}
-                      key={issue.id}
-                      onClick={() =>
-                        setSelected((current) => {
-                          const next = new Set(current);
-                          if (next.has(issue.id)) next.delete(issue.id);
-                          else next.add(issue.id);
-                          return next;
+          </div>
+          {!queue.length ? (
+            <div className="queue-empty">
+              <b>
+                {snapshot.intake
+                  ? "No tickets to point"
+                  : "Your agenda starts in Linear"}
+              </b>
+              <p>
+                {snapshot.intake
+                  ? snapshot.intake.cycleId
+                    ? "Add unestimated tickets to this cycle in Linear, then reload. Or choose another cycle above."
+                    : "Add unestimated tickets without a cycle in Linear, then reload. Or choose a cycle above."
+                  : "Choose a cycle and load its unestimated tickets."}
+              </p>
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={dragEnd}
+            >
+              <SortableContext
+                items={queue.map((item) => item.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="queue-edit-list">
+                  {queue.map((item, index) => (
+                    <QueueRow
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      count={queue.length}
+                      busy={Boolean(busy)}
+                      move={(to) => saveOrder(arrayMove(queue, index, to))}
+                      remove={() =>
+                        void run("remove", async () => {
+                          await request(`/queue?itemId=${item.id}`, "DELETE");
+                          await refresh();
+                          setNotice(
+                            `${item.identifier} removed from this agenda.`,
+                          );
                         })
                       }
-                      type="button"
-                    >
-                      <span className="result-check">
-                        {checked && <Check size={13} />}
-                      </span>
-                      <div>
-                        <b>{issue.title}</b>
-                        <small>
-                          {issue.identifier} ·{" "}
-                          {issue.priorityLabel ?? "No priority"}
-                        </small>
-                      </div>
-                      <span>
-                        {issue.estimate === null
-                          ? "Unpointed"
-                          : voteLabel(
-                              issue.estimate,
-                              initialSnapshot.estimateCards,
-                            )}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </section>
-
-          <section
-            className={`queue-editor ${
-              activePanel !== "queue" ? "prepare-panel-hidden" : ""
-            }`}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+        </section>
+        <div className="cycle-share">
+          <button
+            className="button button-ghost"
+            onClick={() =>
+              void run("copy", async () => {
+                try {
+                  await navigator.clipboard.writeText(inviteUrl);
+                  setNotice("Invite link copied.");
+                } catch {
+                  setCopyFallback(true);
+                }
+              })
+            }
+            type="button"
           >
-            <div className="card-heading">
-              <div>
-                <span className="heading-icon dark">
-                  <GripVertical size={17} />
-                </span>
-                <div>
-                  <b>Meeting order</b>
-                  <small>
-                    {orderStatus === "saving"
-                      ? "Saving order…"
-                      : orderStatus === "saved"
-                        ? "Order saved"
-                        : "Drag tickets into discussion order"}
-                  </small>
-                </div>
-              </div>
-              {queue.length > 0 && (
-                <div className="agenda-tools">
-                  <label>
-                    <ArrowDownAZ size={14} />
-                    <select
-                      aria-label="Sort agenda"
-                      onChange={(event) =>
-                        void applySort(
-                          event.target.value as QueueSortPreset,
-                        )
-                      }
-                      value={sortPreset}
-                    >
-                      <option value="linear">Linear order</option>
-                      <option value="manual">Imported / manual order</option>
-                      <option value="priority">Priority</option>
-                      <option value="oldest">Oldest first</option>
-                      <option value="newest">Newest first</option>
-                      <option value="updated">Recently updated</option>
-                      <option value="identifier">Identifier</option>
-                      <option value="title">Title A–Z</option>
-                      <option value="custom">My custom rules</option>
-                    </select>
-                  </label>
-                  <button
-                    className="clear-agenda-button"
-                    disabled={busy}
-                    onClick={() => setConfirmAction("clear-agenda")}
-                    type="button"
-                  >
-                    <Trash2 size={14} />
-                    Clear
-                  </button>
-                </div>
-              )}
-            </div>
-            {queue.length === 0 ? (
-              <div className="queue-empty">
-                <span>01</span>
-                <span>02</span>
-                <span>03</span>
-                <b>No issues in the room yet</b>
-                <p>Select work from Linear to begin the agenda.</p>
-              </div>
-            ) : (
-              <DndContext
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-                sensors={sensors}
-              >
-                <SortableContext
-                  items={queue.map((item) => item.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="queue-edit-list">
-                    {queue.map((item, index) => (
-                      <SortableQueueRow
-                        cards={initialSnapshot.estimateCards}
-                        index={index}
-                        item={item}
-                        key={item.id}
-                        onRemove={() => void removeItem(item)}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
-          </section>
+            <Copy size={16} /> Copy invite link
+          </button>
+          <SlackInviteButton
+            sessionId={snapshot.id}
+            title={snapshot.title}
+            teamName={snapshot.teamName}
+            issueCount={queue.length}
+            code={snapshot.code}
+          />
+          <button
+            className="button button-ghost"
+            disabled={Boolean(busy)}
+            onClick={() => setConfirm("delete")}
+            type="button"
+          >
+            <Trash2 size={16} /> Delete draft
+          </button>
         </div>
+        {copyFallback && (
+          <label>
+            Copy this invite link
+            <input
+              readOnly
+              value={inviteUrl}
+              onFocus={(event) => event.target.select()}
+            />
+          </label>
+        )}
+        <p className="cycle-scale">
+          <Check size={14} /> Linear estimate scale:{" "}
+          {snapshot.estimateCards.map((card) => card.label).join(" · ")}
+        </p>
       </section>
-
       <ConfirmDialog
-        busy={busy}
-        confirmLabel="Clear agenda"
-        description={`Remove all ${queue.length} ${
-          queue.length === 1 ? "ticket" : "tickets"
-        } from this draft?`}
-        detail="The tickets and their estimates will stay unchanged in Linear."
-        onCancel={() => setConfirmAction(null)}
-        onConfirm={() => void clearAgenda()}
-        open={confirmAction === "clear-agenda"}
-        title="Clear this agenda?"
+        open={confirm === "reload"}
+        busy={Boolean(busy)}
+        title="Reload this agenda?"
+        description="Replace the preview with all unestimated tickets from the selected cycle."
+        detail="Your removed tickets may return and the order will reset. Linear tickets stay unchanged."
+        confirmLabel="Reload agenda"
+        onCancel={() => setConfirm(null)}
+        onConfirm={load}
       />
       <ConfirmDialog
-        busy={busy}
-        confirmLabel="Delete session"
-        description={`Delete “${initialSnapshot.title}” and its agenda?`}
-        detail="This only removes the pointing session. Linear tickets will not be changed."
-        onCancel={() => setConfirmAction(null)}
-        onConfirm={() => void deleteSession()}
-        open={confirmAction === "delete-session"}
-        title="Delete this draft session?"
+        open={confirm === "delete"}
+        busy={Boolean(busy)}
+        title="Delete this draft?"
+        description={`Delete “${snapshot.title}” and its agenda?`}
+        detail="Linear tickets stay unchanged."
+        confirmLabel="Delete draft"
+        onCancel={() => setConfirm(null)}
+        onConfirm={() =>
+          void run("delete", async () => {
+            await request("", "DELETE");
+            router.push("/app");
+          })
+        }
       />
     </main>
   );

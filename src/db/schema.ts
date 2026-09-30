@@ -84,7 +84,7 @@ export const userSettings = pgTable("user_settings", {
     .default([])
     .notNull(),
   autoReveal: boolean("auto_reveal").default(true).notNull(),
-  cycleScope: text("cycle_scope").default("upcoming").notNull(),
+  cycleScope: text("cycle_scope").default("any").notNull(),
   stateTypes: jsonb("state_types")
     .$type<string[]>()
     .default(["unstarted"])
@@ -123,6 +123,13 @@ export const authSessions = pgTable(
   (table) => [uniqueIndex("auth_sessions_token_hash_idx").on(table.tokenHash)],
 );
 
+export const teamDefaults = pgTable("team_defaults", {
+  organizationId: text("organization_id").notNull(),
+  teamId: text("team_id").notNull(),
+  settings: jsonb("settings").$type<import("@/lib/domain").TeamDefaults>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [primaryKey({ columns: [table.organizationId, table.teamId] })]);
+
 export const pokerSessions = pgTable(
   "poker_sessions",
   {
@@ -137,6 +144,8 @@ export const pokerSessions = pgTable(
       .notNull()
       .references(() => users.id),
     activeQueueItemId: uuid("active_queue_item_id"),
+    intake: jsonb("intake").$type<import("@/lib/domain").SessionIntake>(),
+    defaults: jsonb("defaults").$type<import("@/lib/domain").TeamDefaults>(),
     scaleType: text("scale_type").notNull(),
     scaleAllowZero: boolean("scale_allow_zero").default(false).notNull(),
     scaleExtended: boolean("scale_extended").default(false).notNull(),
@@ -153,6 +162,8 @@ export const pokerSessions = pgTable(
     autoReveal: boolean("auto_reveal").default(true).notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    activeStartedAt: timestamp("active_started_at", { withTimezone: true }),
+    elapsedSeconds: integer("elapsed_seconds").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -215,6 +226,8 @@ export const queueItems = pgTable(
     groomingOutcome: text("grooming_outcome"),
     groomingNote: text("grooming_note"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
+    activeStartedAt: timestamp("active_started_at", { withTimezone: true }),
+    elapsedSeconds: integer("elapsed_seconds").default(0).notNull(),
     linearCreatedAt: timestamp("linear_created_at", { withTimezone: true }),
     linearUpdatedAt: timestamp("linear_updated_at", { withTimezone: true }),
     dueDate: text("due_date"),
@@ -311,6 +324,23 @@ export const votes = pgTable(
   (table) => [primaryKey({ columns: [table.roundId, table.userId] })],
 );
 
+export const roundSignals = pgTable(
+  "round_signals",
+  {
+    roundId: uuid("round_id")
+      .notNull()
+      .references(() => rounds.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    value: text("value").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.roundId, table.userId] })],
+);
+
 export const auditEvents = pgTable(
   "audit_events",
   {
@@ -332,3 +362,15 @@ export const auditEvents = pgTable(
   },
   (table) => [index("audit_session_idx").on(table.sessionId)],
 );
+
+// One private Slack destination per Linear user/workspace identity.
+export const slackConnections = pgTable("slack_connections", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  connectionId: uuid("connection_id").defaultRandom().notNull(),
+  encryptedWebhookUrl: text("encrypted_webhook_url").notNull(),
+  workspaceName: text("workspace_name").notNull(),
+  channelName: text("channel_name").notNull(),
+  source: text("source").notNull(),
+  lastSentAt: timestamp("last_sent_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

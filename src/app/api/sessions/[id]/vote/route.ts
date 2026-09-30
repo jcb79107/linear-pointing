@@ -5,13 +5,7 @@ import { apiError, assertSameOrigin } from "@/lib/http";
 import { castVote, getSessionSnapshot } from "@/lib/sessions";
 
 const voteSchema = z.object({
-  value: z.union([
-    z.literal(0),
-    z.literal(1),
-    z.literal(2),
-    z.literal(3),
-    z.literal(4),
-  ]),
+  value: z.number().int().min(0).max(100),
 });
 
 export async function POST(

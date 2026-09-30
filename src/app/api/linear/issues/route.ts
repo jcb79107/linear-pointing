@@ -12,6 +12,7 @@ const querySchema = z.object({
   teamId: z.string().min(1),
   query: z.string().max(200).optional(),
   cycleId: z.string().optional(),
+  noCycle: z.enum(["true", "false"]).optional(),
   projectId: z.string().optional(),
   labelId: z.string().optional(),
   customViewId: z.string().optional(),
@@ -33,8 +34,8 @@ export async function GET(request: Request) {
     const input = querySchema.parse(raw);
     const stateTypes = input.stateTypes
       .split(",")
-      .filter((value): value is "backlog" | "unstarted" | "started" =>
-        ["backlog", "unstarted", "started"].includes(value),
+      .filter((value): value is "backlog" | "unstarted" | "started" | "triage" =>
+        ["backlog", "unstarted", "started", "triage"].includes(value),
       );
     if (!stateTypes.length) {
       return Response.json(
@@ -62,6 +63,7 @@ export async function GET(request: Request) {
       teamId: input.teamId,
       query: input.query,
       cycleId: selectedCycle?.id ?? input.cycleId,
+      noCycle: input.noCycle === "true",
       projectId: input.projectId,
       labelId: input.labelId,
       stateTypes,

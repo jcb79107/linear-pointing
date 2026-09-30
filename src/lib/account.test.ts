@@ -1,0 +1,30 @@
+import { randomUUID } from "node:crypto";
+import { PGlite } from "@electric-sql/pglite";
+import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
+import { beforeAll, afterAll, expect, it, vi } from "vitest";
+import * as schema from "@/db/schema";
+const state = vi.hoisted(() => ({ db: undefined as PgliteDatabase<typeof schema> | undefined }));
+vi.mock("server-only", () => ({}));
+vi.mock("@/db", () => ({ get db() { return state.db; } }));
+import { deleteAccount } from "./account";
+let client: PGlite;
+beforeAll(async () => { client = new PGlite(); state.db = drizzle(client, {schema}); await migrate(state.db, {migrationsFolder:"drizzle"}); });
+afterAll(async () => { await client.close(); });
+it("removes owned sessions and credentials while preserving another user's session", async () => {
+  const db = state.db!;
+  const [owner, other] = await db.insert(schema.users).values(["owner","other"].map(displayName => ({displayName,linearUserId:randomUUID(),organizationId:"org"}))).returning();
+  const [ownRoom, otherRoom] = await db.insert(schema.pokerSessions).values([owner,other].map((u,i)=>({code:`DELETE${i}`,title:"Fixture",organizationId:"org",teamId:"team",teamName:"Team",hostUserId:u.id,scaleType:"linear"}))).returning();
+  await db.insert(schema.authSessions).values({userId:owner.id,tokenHash:"hash",expiresAt:new Date(Date.now()+1000)});
+  await db.insert(schema.linearConnections).values({userId:owner.id,encryptedAccessToken:"encrypted",encryptedRefreshToken:"encrypted",scopes:["read"],expiresAt:new Date()});
+  await db.insert(schema.participants).values([{sessionId:ownRoom.id,userId:other.id},{sessionId:otherRoom.id,userId:owner.id}]);
+  await db.insert(schema.auditEvents).values({sessionId:otherRoom.id,actorUserId:owner.id,eventType:"joined"});
+  await deleteAccount(owner.id);
+  expect((await db.select().from(schema.users)).map(u=>u.id)).toEqual([other.id]);
+  expect((await db.select().from(schema.pokerSessions)).map(s=>s.id)).toEqual([otherRoom.id]);
+  expect(await db.select().from(schema.authSessions)).toHaveLength(0);
+  expect(await db.select().from(schema.linearConnections)).toHaveLength(0);
+  expect(await db.select().from(schema.participants)).toHaveLength(0);
+  expect((await db.select().from(schema.auditEvents))[0].actorUserId).toBeNull();
+  await deleteAccount(owner.id); // idempotent retry
+});

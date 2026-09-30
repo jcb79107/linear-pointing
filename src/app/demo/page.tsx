@@ -4,8 +4,13 @@ import type { SessionSnapshot } from "@/lib/domain";
 const demoSnapshot: SessionSnapshot = {
   id: "demo-session",
   code: "DEMO2026",
-  title: "API grooming · July 30",
+  title: "Platform pointing",
+  autoReveal: true,
   status: "live",
+  startedAt: new Date(Date.now() - 14 * 60_000).toISOString(),
+  endedAt: null,
+  activeStartedAt: new Date(Date.now() - 14 * 60_000).toISOString(),
+  elapsedSeconds: 0,
   teamId: "demo-team",
   teamName: "Platform API",
   scaleType: "linear",
@@ -29,7 +34,7 @@ const demoSnapshot: SessionSnapshot = {
       priority: 2,
       linearSortOrder: 10,
       stateName: "Todo",
-      assigneeName: "Ari Kim",
+      assigneeName: "Richard Hendricks",
       projectName: "API reliability",
       labels: ["Backend", "Reliability"],
       subIssues: [
@@ -54,6 +59,8 @@ const demoSnapshot: SessionSnapshot = {
       groomingOutcome: null,
       groomingNote: null,
       decidedAt: null,
+      activeStartedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+      elapsedSeconds: 0,
       linearCreatedAt: "2026-07-21T12:00:00.000Z",
       linearUpdatedAt: "2026-07-29T18:00:00.000Z",
       dueDate: null,
@@ -70,7 +77,7 @@ const demoSnapshot: SessionSnapshot = {
       priority: 3,
       linearSortOrder: 20,
       stateName: "Todo",
-      assigneeName: "Nina Singh",
+      assigneeName: "Gilfoyle",
       projectName: "Platform controls",
       labels: ["Backend"],
       subIssues: [],
@@ -82,6 +89,8 @@ const demoSnapshot: SessionSnapshot = {
       groomingOutcome: null,
       groomingNote: null,
       decidedAt: null,
+      activeStartedAt: null,
+      elapsedSeconds: 0,
       linearCreatedAt: "2026-07-22T12:00:00.000Z",
       linearUpdatedAt: "2026-07-28T18:00:00.000Z",
       dueDate: null,
@@ -110,6 +119,8 @@ const demoSnapshot: SessionSnapshot = {
       groomingOutcome: null,
       groomingNote: null,
       decidedAt: null,
+      activeStartedAt: null,
+      elapsedSeconds: 0,
       linearCreatedAt: "2026-07-23T12:00:00.000Z",
       linearUpdatedAt: "2026-07-27T18:00:00.000Z",
       dueDate: null,
@@ -119,46 +130,50 @@ const demoSnapshot: SessionSnapshot = {
     {
       id: "u1",
       linearUserId: "linear-u1",
-      name: "Ari Kim",
+      name: "Richard Hendricks",
       avatarUrl: null,
       role: "voter",
       votingEnabled: true,
       online: true,
       hasVoted: false,
       vote: null,
+      signal: null,
     },
     {
       id: "u2",
       linearUserId: "linear-u2",
-      name: "Riley Lee",
+      name: "Dinesh Chugtai",
       avatarUrl: null,
       role: "voter",
       votingEnabled: true,
       online: true,
       hasVoted: true,
       vote: null,
+      signal: null,
     },
     {
       id: "u3",
       linearUserId: "linear-u3",
-      name: "Nina Singh",
+      name: "Gilfoyle",
       avatarUrl: null,
       role: "voter",
       votingEnabled: true,
       online: true,
       hasVoted: false,
       vote: null,
+      signal: null,
     },
     {
       id: "u4",
       linearUserId: "linear-u4",
-      name: "Jason Miller",
+      name: "Jared Dunn",
       avatarUrl: null,
       role: "facilitator",
       votingEnabled: false,
       online: true,
       hasVoted: false,
       vote: null,
+      signal: null,
     },
   ],
   round: {
@@ -175,16 +190,40 @@ const demoSnapshot: SessionSnapshot = {
 export default async function DemoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ role?: string }>;
+  searchParams: Promise<{ role?: string; state?: string }>;
 }) {
-  const { role } = await searchParams;
+  const { role, state } = await searchParams;
+  const roomSnapshot: SessionSnapshot =
+    state === "draft"
+      ? {
+          ...demoSnapshot,
+          status: "draft",
+          startedAt: null,
+          activeStartedAt: null,
+          elapsedSeconds: 0,
+          activeItemId: null,
+          queue: demoSnapshot.queue.map((item) => ({
+            ...item,
+            status: "pending",
+            activeStartedAt: null,
+            elapsedSeconds: 0,
+          })),
+          participants: demoSnapshot.participants.map((person) => ({
+            ...person,
+            hasVoted: false,
+            vote: null,
+            signal: null,
+          })),
+          round: null,
+        }
+      : demoSnapshot;
   const initialSnapshot =
     role === "voter"
       ? {
-          ...demoSnapshot,
+          ...roomSnapshot,
           currentUserId: "u1",
           currentUserRole: "voter" as const,
         }
-      : demoSnapshot;
-  return <LiveRoom demoMode initialSnapshot={initialSnapshot} />;
+      : roomSnapshot;
+  return <LiveRoom key={`${role}-${state}`} demoMode initialSnapshot={initialSnapshot} />;
 }

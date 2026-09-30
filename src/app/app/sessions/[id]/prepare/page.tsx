@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { QueueBuilder } from "@/components/QueueBuilder";
 import { getCurrentUser } from "@/lib/auth";
 import { getSessionSnapshot } from "@/lib/sessions";
-import { getUserSettings } from "@/lib/settings";
+import { getTeamDefaults } from "@/lib/team-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +19,12 @@ export default async function PrepareSessionPage({
   let snapshot;
   let settings;
   try {
-    [snapshot, settings] = await Promise.all([
-      getSessionSnapshot(id, user.id),
-      getUserSettings(user.id),
-    ]);
+    snapshot = await getSessionSnapshot(id, user.id);
+    settings = snapshot.defaults ?? await getTeamDefaults(user, snapshot.teamId);
   } catch {
     notFound();
   }
+  if (snapshot.currentUserRole !== "facilitator") redirect(`/sessions/${id}`);
   if (snapshot.status !== "draft") redirect(`/sessions/${id}`);
   return <QueueBuilder initialSnapshot={snapshot} settings={settings} />;
 }

@@ -1,0 +1,17 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { Brand } from "@/components/Brand";
+export const metadata: Metadata = { title: "Privacy", description: "What Pointed stores, who can access it, and how to remove your data." };
+export default function PrivacyPage() {
+  return <main className="information-page"><Brand /><article>
+    <p className="step-label">UPDATED SEPTEMBER 29, 2026</p><h1>Your data in Pointed</h1>
+    <p>Pointed is an independent, open-source app maintained by Jason (<a href="https://github.com/jcb79107">jcb79107</a>). It is not affiliated with Linear. This page describes the hosted app; self-hosted instances have their own operators.</p>
+    <h2>What we store</h2><p>Your Linear user and workspace IDs, name, email and avatar URL; encrypted connection credentials; team defaults; session participants, imported ticket titles and descriptions, related metadata, votes, estimates, and session activity. We store this information to run and recover your sessions.</p>
+    <h2>Permissions and visibility</h2><p>Linear sign-in starts with read access. Facilitators enable write access to save estimates. A room link alone does not grant access: participants must sign in and have access to the Linear team. Votes stay hidden from other participants until the round is revealed. The service stores votes to operate the session.</p>
+    <h2>Service providers</h2><p>Vercel hosts the app and request logs. Neon stores application data. Linear supplies issues and receives confirmed estimates. When configured, Pusher delivers room-change and presence notifications; those notifications do not include vote values. Optional Slack connections send invitations only when you request them. Embedded designs and external links can contact their respective providers.</p>
+    <h2>Cookies and device storage</h2><p>An HTTP-only cookie keeps you signed in for up to 14 days. Temporary cookies protect sign-in. Your appearance preference is stored on your device. Pointed does not include advertising trackers or sell your information.</p>
+    <h2>Retention and deletion</h2><p>Session history is retained until its owner deletes the session or their account. There is currently no automatic age-based deletion of session history. In <Link href="/app/account">Settings → Account data</Link>, you can delete your account, stored connections, votes, and sessions you created. This also removes those sessions for other participants. Sessions owned by others and shared team defaults remain; audit entries in other sessions lose their link to your account.</p><p>Deleting Pointed data does not reverse estimates already saved in Linear. Remove Pointed from your Linear integrations to revoke its provider authorization. Disconnect optional Slack in Settings. Provider logs and backups can remain until their retention periods expire; Pointed’s delete action does not immediately erase provider backups.</p>
+    <h2>Questions or problems</h2><p>See <Link href="/support">Help and support</Link>. Do not post ticket contents, tokens, email addresses, or private workspace details in public GitHub issues. Report security or privacy vulnerabilities through our <a href="https://github.com/jcb79107/linear-pointing/security/advisories/new">private security reporting channel</a>.</p>
+    <Link href="/">Back to Pointed</Link>
+  </article></main>;
+}

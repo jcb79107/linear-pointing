@@ -1,6 +1,6 @@
 # Product research: configurable planning poker
 
-Research date: August 18, 2026
+Research date: August 19, 2026
 
 ## What established tools teach users to expect
 
@@ -10,6 +10,8 @@ Research date: August 18, 2026
 | Automatic reveal and facilitator overrides | Planning Poker tools emphasize simultaneous private voting, timers, reveal, and revotes. [PlanningPoker.com](https://www.planningpoker.com/) explicitly markets customizable scoring and timers. | Keep private replaceable votes, early reveal, and revote; make reveal-when-ready configurable. |
 | Backlog-tool import | [Miro](https://miro.com/agile/planning-poker/) imports Jira cards, while [Planning Poker Online](https://planningpokeronline.com/) advertises a native Linear integration. | Make Linear the system of record and support batch intake plus individual search. |
 | Reordering and reusable rooms | [Team O'clock](https://www.teamoclock.com/help/the-planning-poker-meeting) documents draft meetings, task filtering, reordering, revoting, and stable team URLs. | Preserve persistent session URLs, draft preparation, manual drag order, and reusable filter/sort defaults. |
+| Linear import and write-back are established | [PlanningPoker.live](https://planningpoker.live/integrations/linear), [Parabol](https://www.parabol.co/integrations/linear/), and [Spades](https://spades.poker/) all describe pulling Linear issues into a room and writing estimates back. | Do not claim the integration itself is unique. Differentiate on being open source, Linear-only, and intentionally smaller than a full meeting suite. |
+| Coding agents can remove self-hosting friction | Linear teams are likely to already use developer tools, while OAuth and environment setup remain unfamiliar to many first-time self-hosters. | Lead with a safe prompt for Codex, Claude Code, Cursor, or another coding agent; keep concise manual instructions as the fallback. |
 
 ## Linear-native constraints and opportunities
 
@@ -42,20 +44,20 @@ and [OAuth application manifests](https://linear.app/developers/oauth-app-manife
 - Linear manual order plus priority, age, recency, identifier, title, custom
   multi-rule sorts, and final drag order.
 - Session-level snapshots so preference changes do not mutate active rooms.
-- Lightweight readiness signals for description, acceptance criteria, owner,
-  and project.
-- Four unambiguous outcomes: Ready with an estimate, Needs details, Split, or
-  Parked. Optional notes are written to the Linear issue.
+- The issue preview renders Linear content rather than adding a separate
+  readiness model or duplicate issue fields.
+- One decision path: write the estimate to Linear and continue. The only
+  secondary action is to skip the ticket.
 - Facilitators may vote or remain neutral, and tied votes never fabricate a
   recommendation.
 - A visible round timer, pause/resume, and a copyable end-of-session summary.
+- Agent-first self-hosting instructions with a novice-friendly manual option.
 
 ## Sensible next bets
 
-- Facilitator keyboard shortcuts and accessible modal focus management.
 - Named settings profiles for product managers who run ceremonies for multiple
   teams with different workflows.
 - Project, label, and explicit workflow-state filters when teams need more
   granularity than the three workflow categories.
-- Aggregate readiness and meeting-flow insights only after real users show
-  that the information changes how they prepare for grooming.
+- Anonymous meeting-flow insights only after real users show that they improve
+  the core pointing workflow without adding ceremony.

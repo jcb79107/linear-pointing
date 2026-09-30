@@ -2,11 +2,7 @@ export type SessionStatus = "draft" | "live" | "ended";
 export type QueueItemStatus = "pending" | "active" | "estimated" | "skipped";
 export type ParticipantRole = "facilitator" | "voter" | "observer";
 export type RoundStatus = "voting" | "revealed" | "finalized" | "abandoned";
-export type GroomingOutcome =
-  | "ready"
-  | "needs-work"
-  | "split"
-  | "parked";
+export type GroomingOutcome = "ready" | "skipped";
 export type EstimateScaleType =
   | "notUsed"
   | "exponential"
@@ -14,6 +10,7 @@ export type EstimateScaleType =
   | "linear"
   | "tShirt";
 export type VoteValue = number;
+export type RoundSignal = "needs-context";
 
 export interface EstimateCard {
   value: number;
@@ -33,6 +30,7 @@ export interface SessionParticipant extends SessionUser {
   online: boolean;
   hasVoted: boolean;
   vote: VoteValue | null;
+  signal: RoundSignal | null;
 }
 
 export interface SessionQueueItem {
@@ -69,6 +67,8 @@ export interface SessionQueueItem {
   groomingOutcome: GroomingOutcome | null;
   groomingNote: string | null;
   decidedAt: string | null;
+  activeStartedAt: string | null;
+  elapsedSeconds: number;
   linearCreatedAt: string | null;
   linearUpdatedAt: string | null;
   dueDate: string | null;
@@ -84,11 +84,34 @@ export interface SessionRound {
   createdAt: string;
 }
 
+export interface TeamDefaults {
+  cycleOffset: 0 | 1 | 2 | 3 | "backlog";
+  defaultSort: "linear" | "priority" | "oldest";
+  autoReveal: boolean;
+  facilitatorVotes: boolean;
+}
+
+export interface SessionIntake {
+  cycleOffset: TeamDefaults["cycleOffset"];
+  cycleId: string | null;
+  name: string;
+  startsAt: string | null;
+  endsAt: string | null;
+}
+
 export interface SessionSnapshot {
+  autoReveal?: boolean;
+  intake?: SessionIntake | null;
+  defaults?: TeamDefaults;
+
   id: string;
   code: string;
   title: string;
   status: SessionStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  activeStartedAt: string | null;
+  elapsedSeconds: number;
   teamId: string;
   teamName: string;
   scaleType: EstimateScaleType;
@@ -155,7 +178,7 @@ export type PointingPreset =
 export type TicketCycleScope = "upcoming" | "active" | "any";
 export type TicketEstimateScope = "unestimated" | "estimated" | "any";
 export type TicketAssigneeScope = "anyone" | "me" | "unassigned";
-export type PointableStateType = "backlog" | "unstarted" | "started";
+export type PointableStateType = "backlog" | "unstarted" | "started" | "triage";
 export type QueueSortPreset =
   | "manual"
   | "linear"

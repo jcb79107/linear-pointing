@@ -63,7 +63,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   pointingPreset: "linear-team",
   customPointValues: [0, 1, 2, 3, 5, 8, 13],
   autoReveal: true,
-  cycleScope: "upcoming",
+  cycleScope: "any",
   stateTypes: ["unstarted"],
   estimateScope: "unestimated",
   assigneeScope: "anyone",
@@ -76,5 +76,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
 
 export function parseUserSettings(value: unknown): UserSettings {
   const parsed = userSettingsSchema.safeParse(value);
-  return parsed.success ? parsed.data : DEFAULT_USER_SETTINGS;
+  if (!parsed.success) return DEFAULT_USER_SETTINGS;
+  // Preserve old stored rows without exposing obsolete deck/custom-sort controls.
+  return { ...parsed.data, pointingPreset: "linear-team", defaultSort: parsed.data.defaultSort === "custom" ? "linear" : parsed.data.defaultSort };
 }

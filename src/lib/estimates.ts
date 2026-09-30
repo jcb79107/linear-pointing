@@ -49,7 +49,7 @@ export function linearTeamEstimateCards(
       break;
     }
     default:
-      cards = [];
+      return [];
   }
   return team.issueEstimationAllowZero
     ? [{ value: 0, label: "0" }, ...cards]

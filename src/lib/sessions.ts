@@ -7,7 +7,6 @@ import {
   eq,
   inArray,
   max,
-  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -19,6 +18,7 @@ import {
   pokerSessions,
   queueItems,
   rounds,
+  roundSignals,
   roundVoters,
   users,
   votes,
@@ -26,17 +26,17 @@ import {
 import type {
   LinearIssueSummary,
   LinearTeamSummary,
-  GroomingOutcome,
   ParticipantRole,
+  RoundSignal,
   SessionSnapshot,
   EstimateCard,
   PointableStateType,
   TicketEstimateScope,
   VoteValue,
+  TeamDefaults,
 } from "@/lib/domain";
 import { isFinalizableEstimate } from "@/lib/estimates";
 import {
-  createLinearIssueComment,
   getLinearIssue,
   updateLinearIssueEstimate,
   userHasTeamAccess,
@@ -59,6 +59,7 @@ import {
   shouldAutoReveal,
   voteValueForViewer,
 } from "@/lib/rounds";
+import { accumulatedElapsedSeconds } from "@/lib/timing";
 
 function sessionCode(): string {
   return crypto.randomUUID().replaceAll("-", "").slice(0, 10);
@@ -111,6 +112,7 @@ export async function createPokerSession(input: {
   team: LinearTeamSummary;
   pointingCards: EstimateCard[];
   autoReveal: boolean;
+  defaults?: TeamDefaults;
 }) {
   if (!input.pointingCards.length) throw new Error("Choose at least one pointing value");
 
@@ -129,6 +131,7 @@ export async function createPokerSession(input: {
         scaleExtended: input.team.issueEstimationExtended,
         pointingCards: input.pointingCards,
         autoReveal: input.autoReveal,
+        defaults: input.defaults,
       })
       .returning();
 
@@ -136,7 +139,7 @@ export async function createPokerSession(input: {
       sessionId: session.id,
       userId: input.userId,
       role: "facilitator",
-      votingEnabled: false,
+      votingEnabled: input.defaults?.facilitatorVotes ?? false,
     });
     return session;
   });
@@ -169,6 +172,22 @@ export async function listPokerSessions(
     .where(eq(pokerSessions.organizationId, organizationId))
     .groupBy(pokerSessions.id)
     .orderBy(desc(pokerSessions.updatedAt));
+}
+
+export async function getPublicSessionPreview(code: string) {
+  const [session] = await db
+    .select({
+      title: pokerSessions.title,
+      teamName: pokerSessions.teamName,
+      status: pokerSessions.status,
+      issueCount: sql<number>`count(distinct ${queueItems.id})::int`,
+    })
+    .from(pokerSessions)
+    .leftJoin(queueItems, eq(queueItems.sessionId, pokerSessions.id))
+    .where(eq(pokerSessions.code, code))
+    .groupBy(pokerSessions.id)
+    .limit(1);
+  return session ?? null;
 }
 
 export async function addQueueItems(input: {
@@ -276,6 +295,8 @@ export async function reorderQueue(input: {
   }
 
   await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(pokerSessions).where(eq(pokerSessions.id, input.sessionId)).for("update");
+    if (locked.status !== "draft") throw new Error("UNPROCESSABLE:The session has started. Reload the room.");
     const existing = await tx
       .select({ id: queueItems.id })
       .from(queueItems)
@@ -317,8 +338,9 @@ export async function removeQueueItem(input: {
   userId: string;
   queueItemId: string;
 }) {
-  const { session } = await requireFacilitator(input.sessionId, input.userId);
+  await requireFacilitator(input.sessionId, input.userId);
   await db.transaction(async (tx) => {
+    const [session] = await tx.select().from(pokerSessions).where(eq(pokerSessions.id, input.sessionId)).for("update");
     const [item] = await tx
       .select({
         id: queueItems.id,
@@ -420,14 +442,22 @@ export async function startPokerSession(sessionId: string, userId: string) {
   );
   requireEstimableIssue(refreshedFirst);
 
+  const startedAt = new Date();
   await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(pokerSessions).where(eq(pokerSessions.id, sessionId)).for("update");
+    if (locked.status !== "draft") return;
+    const [currentFirst] = await tx.select().from(queueItems).where(eq(queueItems.sessionId, sessionId)).orderBy(asc(queueItems.position)).limit(1);
+    if (currentFirst?.id !== firstItem.id) throw new Error("UNPROCESSABLE:The agenda changed. Reload before starting.");
     await tx
       .update(pokerSessions)
       .set({
         status: "live",
         activeQueueItemId: firstItem.id,
-        startedAt: new Date(),
-        updatedAt: new Date(),
+        startedAt,
+        endedAt: null,
+        activeStartedAt: startedAt,
+        elapsedSeconds: 0,
+        updatedAt: startedAt,
       })
       .where(eq(pokerSessions.id, sessionId));
     await tx
@@ -449,7 +479,9 @@ export async function startPokerSession(sessionId: string, userId: string) {
         linearCreatedAt: new Date(refreshedFirst.createdAt),
         linearUpdatedAt: new Date(refreshedFirst.updatedAt),
         dueDate: refreshedFirst.dueDate,
-        updatedAt: new Date(),
+        activeStartedAt: startedAt,
+        elapsedSeconds: 0,
+        updatedAt: startedAt,
       })
       .where(eq(queueItems.id, firstItem.id));
     await createRound(tx, session, firstItem.id, refreshedFirst.estimate);
@@ -603,7 +635,7 @@ async function requireMembership(sessionId: string, userId: string) {
   return row;
 }
 
-async function requireFacilitator(sessionId: string, userId: string) {
+export async function requireFacilitator(sessionId: string, userId: string) {
   const membership = await requireMembership(sessionId, userId);
   if (!canFacilitate(membership.role)) throw new Error("FORBIDDEN");
   return membership;
@@ -647,7 +679,7 @@ export async function getSessionSnapshot(
       .then((rows) => rows[0] ?? null),
   ]);
 
-  const [voterRows, voteRows] = activeRound
+  const [voterRows, voteRows, signalRows] = activeRound
     ? await Promise.all([
         db
           .select({ userId: roundVoters.userId })
@@ -665,11 +697,18 @@ export async function getSessionSnapshot(
           .select({ userId: votes.userId, value: votes.value })
           .from(votes)
           .where(eq(votes.roundId, activeRound.id)),
+        db
+          .select({ userId: roundSignals.userId, value: roundSignals.value })
+          .from(roundSignals)
+          .where(eq(roundSignals.roundId, activeRound.id)),
       ])
-    : [[], []];
+    : [[], [], []];
   const eligibleVoterIds = voterRows.map((row) => row.userId);
   const voteMap = new Map(
     voteRows.map((row) => [row.userId, parseVote(row.value)]),
+  );
+  const signalMap = new Map(
+    signalRows.map((row) => [row.userId, row.value as RoundSignal]),
   );
 
   return {
@@ -677,18 +716,31 @@ export async function getSessionSnapshot(
     code: session.code,
     title: session.title,
     status: session.status,
+    startedAt: session.startedAt?.toISOString() ?? null,
+    endedAt: session.endedAt?.toISOString() ?? null,
+    activeStartedAt: session.activeStartedAt?.toISOString() ?? null,
+    elapsedSeconds: session.elapsedSeconds,
     teamId: session.teamId,
     teamName: session.teamName,
     scaleType:
       session.scaleType as LinearTeamSummary["issueEstimationType"],
     estimateCards: session.pointingCards,
+    autoReveal: session.autoReveal,
+    intake: session.intake,
+    defaults: session.defaults ?? undefined,
     currentUserId: userId,
     currentUserRole: role,
     activeItemId: session.activeQueueItemId,
     queue: queue.map((item) => ({
       ...item,
       labels: item.labels,
-      groomingOutcome: item.groomingOutcome as GroomingOutcome | null,
+      groomingOutcome:
+        item.groomingOutcome === "ready"
+          ? "ready"
+          : item.groomingOutcome
+            ? "skipped"
+            : null,
+      activeStartedAt: item.activeStartedAt?.toISOString() ?? null,
       linearCreatedAt: item.linearCreatedAt?.toISOString() ?? null,
       linearUpdatedAt: item.linearUpdatedAt?.toISOString() ?? null,
       decidedAt: item.decidedAt?.toISOString() ?? null,
@@ -700,6 +752,9 @@ export async function getSessionSnapshot(
         ...member,
         online: false,
         hasVoted: member.votingEnabled && voteMap.has(member.id),
+        signal: member.votingEnabled
+          ? (signalMap.get(member.id) ?? null)
+          : null,
         vote:
           rawVote === null || !activeRound
             ? null
@@ -851,6 +906,14 @@ export async function castVote(input: {
         target: [votes.roundId, votes.userId],
         set: { value: serializeVote(input.value), updatedAt: new Date() },
       });
+    await tx
+      .delete(roundSignals)
+      .where(
+        and(
+          eq(roundSignals.roundId, round.id),
+          eq(roundSignals.userId, input.userId),
+        ),
+      );
 
     const [eligibleRows, voteRows] = await Promise.all([
       tx
@@ -1017,6 +1080,14 @@ export async function setParticipantRole(input: {
               eq(roundVoters.userId, input.participantUserId),
             ),
           );
+        await tx
+          .delete(roundSignals)
+          .where(
+            and(
+              eq(roundSignals.roundId, round.id),
+              eq(roundSignals.userId, input.participantUserId),
+            ),
+          );
       }
       const [eligibleRows, voteRows] = await Promise.all([
         tx
@@ -1086,9 +1157,24 @@ export async function activateQueueItem(input: {
     )
     .limit(1);
   if (!target) throw new Error("Issue not found in this session");
+  if (
+    session.status === "live" &&
+    session.activeQueueItemId === target.id &&
+    target.status === "active"
+  ) {
+    return;
+  }
 
   const refreshed = await getLinearIssue(input.userId, target.linearIssueId);
   requireEstimableIssue(refreshed);
+  const activatedAt = new Date();
+  const [previousActive] = session.activeQueueItemId
+    ? await db
+        .select()
+        .from(queueItems)
+        .where(eq(queueItems.id, session.activeQueueItemId))
+        .limit(1)
+    : [];
   await db.transaction(async (tx) => {
     await tx
       .update(rounds)
@@ -1099,16 +1185,21 @@ export async function activateQueueItem(input: {
           inArray(rounds.status, ["voting", "revealed"]),
         ),
       );
-    await tx
-      .update(queueItems)
-      .set({ status: "pending", updatedAt: new Date() })
-      .where(
-        and(
-          eq(queueItems.sessionId, input.sessionId),
-          eq(queueItems.status, "active"),
-          ne(queueItems.id, target.id),
-        ),
-      );
+    if (previousActive && previousActive.id !== target.id) {
+      await tx
+        .update(queueItems)
+        .set({
+          status: "pending",
+          activeStartedAt: null,
+          elapsedSeconds: accumulatedElapsedSeconds(
+            previousActive.elapsedSeconds,
+            previousActive.activeStartedAt,
+            activatedAt,
+          ),
+          updatedAt: activatedAt,
+        })
+        .where(eq(queueItems.id, previousActive.id));
+    }
     await tx
       .update(queueItems)
       .set({
@@ -1129,10 +1220,11 @@ export async function activateQueueItem(input: {
         groomingOutcome: null,
         groomingNote: null,
         decidedAt: null,
+        activeStartedAt: activatedAt,
         linearCreatedAt: new Date(refreshed.createdAt),
         linearUpdatedAt: new Date(refreshed.updatedAt),
         dueDate: refreshed.dueDate,
-        updatedAt: new Date(),
+        updatedAt: activatedAt,
       })
       .where(eq(queueItems.id, target.id));
     await tx
@@ -1141,7 +1233,8 @@ export async function activateQueueItem(input: {
         activeQueueItemId: target.id,
         status: "live",
         endedAt: null,
-        updatedAt: new Date(),
+        activeStartedAt: session.activeStartedAt ?? activatedAt,
+        updatedAt: activatedAt,
       })
       .where(eq(pokerSessions.id, input.sessionId));
     await createRound(tx, session, target.id, refreshed.estimate);
@@ -1150,43 +1243,6 @@ export async function activateQueueItem(input: {
 }
 
 export async function skipActiveItem(sessionId: string, userId: string) {
-  return recordGroomingOutcome({
-    sessionId,
-    userId,
-    outcome: "parked",
-    note: "",
-  });
-}
-
-function outcomeLabel(outcome: GroomingOutcome) {
-  switch (outcome) {
-    case "ready":
-      return "Ready";
-    case "needs-work":
-      return "Needs details";
-    case "split":
-      return "Split";
-    case "parked":
-      return "Parked";
-  }
-}
-
-function groomingComment(
-  sessionTitle: string,
-  outcome: GroomingOutcome,
-  note: string,
-) {
-  return `**Grooming outcome: ${outcomeLabel(outcome)}**\n\n${note.trim()}\n\n_Recorded during ${sessionTitle}._`;
-}
-
-export async function recordGroomingOutcome(input: {
-  sessionId: string;
-  userId: string;
-  outcome: Exclude<GroomingOutcome, "ready">;
-  note?: string;
-}) {
-  const sessionId = input.sessionId;
-  const userId = input.userId;
   const { session } = await requireFacilitator(sessionId, userId);
   if (!session.activeQueueItemId) throw new Error("No active issue");
   const queue = await db
@@ -1197,6 +1253,8 @@ export async function recordGroomingOutcome(input: {
       position: queueItems.position,
       status: queueItems.status,
       currentEstimate: queueItems.currentEstimate,
+      activeStartedAt: queueItems.activeStartedAt,
+      elapsedSeconds: queueItems.elapsedSeconds,
     })
     .from(queueItems)
     .where(eq(queueItems.sessionId, sessionId));
@@ -1210,14 +1268,7 @@ export async function recordGroomingOutcome(input: {
   if (refreshedNext) requireEstimableIssue(refreshedNext);
   const activeItem = queue.find((item) => item.id === session.activeQueueItemId);
   if (!activeItem) throw new Error("Active issue not found");
-  const note = input.note?.trim().slice(0, 2000) ?? "";
-  if (note) {
-    await createLinearIssueComment(
-      userId,
-      activeItem.linearIssueId,
-      groomingComment(session.title, input.outcome, note),
-    );
-  }
+  const decidedAt = new Date();
 
   await db.transaction(async (tx) => {
     await tx
@@ -1233,10 +1284,16 @@ export async function recordGroomingOutcome(input: {
       .update(queueItems)
       .set({
         status: "skipped",
-        groomingOutcome: input.outcome,
-        groomingNote: note || null,
-        decidedAt: new Date(),
-        updatedAt: new Date(),
+        groomingOutcome: "skipped",
+        groomingNote: null,
+        decidedAt,
+        activeStartedAt: null,
+        elapsedSeconds: accumulatedElapsedSeconds(
+          activeItem.elapsedSeconds,
+          activeItem.activeStartedAt,
+          decidedAt,
+        ),
+        updatedAt: decidedAt,
       })
       .where(eq(queueItems.id, session.activeQueueItemId!));
     if (nextId) {
@@ -1256,15 +1313,16 @@ export async function recordGroomingOutcome(input: {
           subIssues: refreshedNext!.subIssues,
           attachments: refreshedNext!.attachments,
           currentEstimate: refreshedNext!.estimate,
+          activeStartedAt: decidedAt,
           linearCreatedAt: new Date(refreshedNext!.createdAt),
           linearUpdatedAt: new Date(refreshedNext!.updatedAt),
           dueDate: refreshedNext!.dueDate,
-          updatedAt: new Date(),
+          updatedAt: decidedAt,
         })
         .where(eq(queueItems.id, nextId));
       await tx
         .update(pokerSessions)
-        .set({ activeQueueItemId: nextId, updatedAt: new Date() })
+        .set({ activeQueueItemId: nextId, updatedAt: decidedAt })
         .where(eq(pokerSessions.id, sessionId));
       await createRound(tx, session, nextId, refreshedNext!.estimate);
     } else {
@@ -1273,8 +1331,14 @@ export async function recordGroomingOutcome(input: {
         .set({
           activeQueueItemId: null,
           status: "ended",
-          endedAt: new Date(),
-          updatedAt: new Date(),
+          endedAt: decidedAt,
+          activeStartedAt: null,
+          elapsedSeconds: accumulatedElapsedSeconds(
+            session.elapsedSeconds,
+            session.activeStartedAt,
+            decidedAt,
+          ),
+          updatedAt: decidedAt,
         })
         .where(eq(pokerSessions.id, sessionId));
       await tx.insert(auditEvents).values({
@@ -1291,17 +1355,24 @@ export async function recordGroomingOutcome(input: {
       metadata: {
         queueItemId: session.activeQueueItemId,
         identifier: activeItem.identifier,
-        outcome: input.outcome,
-        noteWrittenToLinear: Boolean(note),
+        outcome: "skipped",
       },
     });
   });
-  await broadcastSessionChanged(sessionId, "grooming-outcome-recorded");
+  await broadcastSessionChanged(sessionId, "issue-skipped");
 }
 
 export async function finishPokerSession(sessionId: string, userId: string) {
   const { session } = await requireFacilitator(sessionId, userId);
   if (session.status === "ended") return;
+  const finishedAt = new Date();
+  const [activeItem] = session.activeQueueItemId
+    ? await db
+        .select()
+        .from(queueItems)
+        .where(eq(queueItems.id, session.activeQueueItemId))
+        .limit(1)
+    : [];
   await db.transaction(async (tx) => {
     await tx
       .update(rounds)
@@ -1315,7 +1386,18 @@ export async function finishPokerSession(sessionId: string, userId: string) {
     if (session.activeQueueItemId) {
       await tx
         .update(queueItems)
-        .set({ status: "pending", updatedAt: new Date() })
+        .set({
+          status: "pending",
+          activeStartedAt: null,
+          elapsedSeconds: activeItem
+            ? accumulatedElapsedSeconds(
+                activeItem.elapsedSeconds,
+                activeItem.activeStartedAt,
+                finishedAt,
+              )
+            : 0,
+          updatedAt: finishedAt,
+        })
         .where(eq(queueItems.id, session.activeQueueItemId));
     }
     await tx
@@ -1323,8 +1405,14 @@ export async function finishPokerSession(sessionId: string, userId: string) {
       .set({
         status: "ended",
         activeQueueItemId: null,
-        endedAt: new Date(),
-        updatedAt: new Date(),
+        endedAt: finishedAt,
+        activeStartedAt: null,
+        elapsedSeconds: accumulatedElapsedSeconds(
+          session.elapsedSeconds,
+          session.activeStartedAt,
+          finishedAt,
+        ),
+        updatedAt: finishedAt,
       })
       .where(eq(pokerSessions.id, sessionId));
     await tx.insert(auditEvents).values({
@@ -1342,7 +1430,6 @@ export async function finalizeEstimate(input: {
   userId: string;
   estimate: number;
   overwrite?: boolean;
-  note?: string;
 }) {
   const { session } = await requireFacilitator(input.sessionId, input.userId);
   if (!session.activeQueueItemId) throw new Error("No active issue");
@@ -1403,14 +1490,7 @@ export async function finalizeEstimate(input: {
         item.linearIssueId,
         input.estimate,
       );
-      const note = input.note?.trim().slice(0, 2000) ?? "";
-      if (note) {
-        await createLinearIssueComment(
-          input.userId,
-          item.linearIssueId,
-          groomingComment(session.title, "ready", note),
-        );
-      }
+      const finalizedAt = new Date();
 
       const queue = await tx
         .select({
@@ -1426,7 +1506,7 @@ export async function finalizeEstimate(input: {
 
       await tx
         .update(rounds)
-        .set({ status: "finalized", finalizedAt: new Date() })
+        .set({ status: "finalized", finalizedAt })
         .where(eq(rounds.id, round.id));
       await tx
         .update(queueItems)
@@ -1435,9 +1515,15 @@ export async function finalizeEstimate(input: {
           currentEstimate: input.estimate,
           finalEstimate: input.estimate,
           groomingOutcome: "ready",
-          groomingNote: note || null,
-          decidedAt: new Date(),
-          updatedAt: new Date(),
+          groomingNote: null,
+          decidedAt: finalizedAt,
+          activeStartedAt: null,
+          elapsedSeconds: accumulatedElapsedSeconds(
+            item.elapsedSeconds,
+            item.activeStartedAt,
+            finalizedAt,
+          ),
+          updatedAt: finalizedAt,
         })
         .where(eq(queueItems.id, item.id));
 
@@ -1463,15 +1549,16 @@ export async function finalizeEstimate(input: {
             subIssues: refreshedNext.subIssues,
             attachments: refreshedNext.attachments,
             currentEstimate: refreshedNext.estimate,
+            activeStartedAt: finalizedAt,
             linearCreatedAt: new Date(refreshedNext.createdAt),
             linearUpdatedAt: new Date(refreshedNext.updatedAt),
             dueDate: refreshedNext.dueDate,
-            updatedAt: new Date(),
+            updatedAt: finalizedAt,
           })
           .where(eq(queueItems.id, nextId));
         await tx
           .update(pokerSessions)
-          .set({ activeQueueItemId: nextId, updatedAt: new Date() })
+          .set({ activeQueueItemId: nextId, updatedAt: finalizedAt })
           .where(eq(pokerSessions.id, input.sessionId));
         await createRound(tx, session, nextId, refreshedNext.estimate);
       } else {
@@ -1480,8 +1567,14 @@ export async function finalizeEstimate(input: {
           .set({
             activeQueueItemId: null,
             status: "ended",
-            endedAt: new Date(),
-            updatedAt: new Date(),
+            endedAt: finalizedAt,
+            activeStartedAt: null,
+            elapsedSeconds: accumulatedElapsedSeconds(
+              session.elapsedSeconds,
+              session.activeStartedAt,
+              finalizedAt,
+            ),
+            updatedAt: finalizedAt,
           })
           .where(eq(pokerSessions.id, input.sessionId));
         await tx.insert(auditEvents).values({
@@ -1510,7 +1603,6 @@ export async function finalizeEstimate(input: {
             linearIssueId: item.linearIssueId,
             estimate: input.estimate,
             outcome: "ready",
-            noteWrittenToLinear: Boolean(note),
           },
         },
       ]);
@@ -1554,4 +1646,14 @@ export async function deletePokerSession(
 ): Promise<void> {
   await requireFacilitator(sessionId, userId);
   await db.delete(pokerSessions).where(eq(pokerSessions.id, sessionId));
+}
+
+export async function getSessionInviteDetails(sessionId: string, userId: string) {
+  const { session } = await requireFacilitator(sessionId, userId);
+  const items = await db.select({ id: queueItems.id }).from(queueItems).where(eq(queueItems.sessionId, sessionId));
+  return { code: session.code, title: session.title, teamName: session.teamName, issueCount: items.length };
+}
+
+export async function recordSlackInviteOutcome(sessionId: string, userId: string, success: boolean) {
+  await audit(sessionId, userId, success ? "invite.slack_sent" : "invite.slack_failed");
 }

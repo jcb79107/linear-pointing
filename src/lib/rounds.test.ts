@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   canFacilitate,
   canVote,
-  majorityVote,
+  averageVote,
   nextPendingItemId,
   publicVoteValue,
+  roundedUpAverageVote,
   shouldAddNewVoterToRound,
   shouldAutoReveal,
   voteValueForViewer,
@@ -44,11 +45,21 @@ describe("round behavior", () => {
     expect(canFacilitate("voter")).toBe(false);
   });
 
-  it("recommends a unique most common vote and leaves ties to discussion", () => {
-    expect(majorityVote([1, 2, 2, 3])).toBe(2);
-    expect(majorityVote([1, 1, 3, 3])).toBeNull();
-    expect(majorityVote([1, 2, 3])).toBeNull();
-    expect(majorityVote([])).toBeNull();
+  it("averages votes and rounds up to the next available estimate card", () => {
+    expect(averageVote([1, 2, 2, 3])).toBe(2);
+    expect(roundedUpAverageVote([1, 2, 3], [0, 1, 2, 3, 5, 8])).toEqual({
+      average: 2,
+      estimate: 2,
+    });
+    expect(roundedUpAverageVote([2, 3, 3], [0, 1, 2, 3, 5, 8])).toEqual({
+      average: 8 / 3,
+      estimate: 3,
+    });
+    expect(roundedUpAverageVote([8, 13], [0, 1, 2, 3, 5, 8, 13])).toEqual({
+      average: 10.5,
+      estimate: 13,
+    });
+    expect(roundedUpAverageVote([], [0, 1, 2])).toBeNull();
   });
 
   it("advances by queue position and ignores skipped work", () => {

@@ -1,0 +1,36 @@
+{
+  "time": "2026-09-28T14:04:03.239Z",
+  "origin": "https://public-linear-pointing.vercel.app",
+  "results": [
+    {
+      "viewport": 1440,
+      "status": "passed",
+      "checks": [
+        "landing",
+        "demo navigation",
+        "revealed votes",
+        "skip advances",
+        "no page errors"
+      ]
+    },
+    {
+      "viewport": 390,
+      "status": "passed",
+      "checks": [
+        "landing",
+        "demo navigation",
+        "revealed votes",
+        "skip advances",
+        "no page errors"
+      ]
+    },
+    {
+      "path": "/api/teams/not-a-team/defaults",
+      "status": 401
+    },
+    {
+      "path": "/api/sessions/not-a-session/preview",
+      "status": 401
+    }
+  ]
+}

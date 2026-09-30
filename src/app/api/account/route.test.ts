@@ -1,0 +1,10 @@
+import { beforeEach, expect, it, vi } from "vitest";
+const mocks=vi.hoisted(()=>({user:vi.fn(),remove:vi.fn()}));
+vi.mock("@/lib/auth",()=>({requireCurrentUser:mocks.user}));
+vi.mock("@/lib/account",()=>({deleteAccount:mocks.remove}));
+import { DELETE } from "./route";
+beforeEach(()=>{vi.clearAllMocks();mocks.user.mockResolvedValue({id:"self"});mocks.remove.mockResolvedValue(undefined);});
+const request=(body:unknown,origin="https://pointed.test")=>new Request("https://pointed.test/api/account",{method:"DELETE",headers:{origin,"Content-Type":"application/json"},body:JSON.stringify(body)});
+it("uses only the authenticated identity and expires the cookie",async()=>{const r=await DELETE(request({confirmation:"delete-my-account"}));expect(r.status).toBe(204);expect(mocks.remove).toHaveBeenCalledWith("self");expect(r.headers.get("set-cookie")).toContain("Max-Age=0");});
+it("rejects another origin and injected target identity",async()=>{expect((await DELETE(request({confirmation:"delete-my-account"},"https://evil.test"))).status).toBe(403);expect((await DELETE(request({confirmation:"delete-my-account",userId:"someone-else"}))).status).toBe(400);expect(mocks.remove).not.toHaveBeenCalled();});
+it("requires authentication and explicit confirmation",async()=>{expect((await DELETE(request({}))).status).toBe(400);mocks.user.mockRejectedValue(new Error("UNAUTHORIZED"));expect((await DELETE(request({confirmation:"delete-my-account"}))).status).toBe(401);expect(mocks.remove).not.toHaveBeenCalled();});

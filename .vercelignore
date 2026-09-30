@@ -1,0 +1,11 @@
+.env*
+.vercel
+.git
+.next
+node_modules
+playwright-report
+test-results
+coverage
+*.tsbuildinfo
+.agents
+docs

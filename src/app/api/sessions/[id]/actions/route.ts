@@ -7,7 +7,6 @@ import {
   finalizeEstimate,
   finishPokerSession,
   getSessionSnapshot,
-  recordGroomingOutcome,
   refreshActiveIssuePreview,
   revealRound,
   revoteRound,
@@ -22,18 +21,12 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("refresh-issue") }),
   z.object({ action: z.literal("finish") }),
   z.object({
-    action: z.literal("outcome"),
-    outcome: z.enum(["needs-work", "split", "parked"]),
-    note: z.string().trim().max(2000).optional(),
-  }),
-  z.object({
     action: z.literal("activate"),
     queueItemId: z.string().uuid(),
   }),
   z.object({
     action: z.literal("finalize"),
     estimate: z.number().int().nonnegative(),
-    note: z.string().trim().max(2000).optional(),
     overwrite: z.boolean().optional(),
   }),
   z.object({
@@ -72,14 +65,6 @@ export async function POST(
       case "finish":
         await finishPokerSession(id, user.id);
         break;
-      case "outcome":
-        await recordGroomingOutcome({
-          sessionId: id,
-          userId: user.id,
-          outcome: input.outcome,
-          note: input.note,
-        });
-        break;
       case "activate":
         await activateQueueItem({
           sessionId: id,
@@ -92,7 +77,6 @@ export async function POST(
           sessionId: id,
           userId: user.id,
           estimate: input.estimate,
-          note: input.note,
           overwrite: input.overwrite,
         });
         break;
