@@ -39,3 +39,27 @@ test('participant can read the full ticket and vote on a short phone', async ({ 
   await page.getByRole('button', { name: '3 points, shortcut 4', exact: true }).click();
   await expect(page.getByRole('button', { name: '3 points, shortcut 4', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
+
+test('header title and actions fit across tablet and desktop breakpoints', async ({ page }) => {
+  await page.goto('/demo');
+  for (const width of [700, 701, 900, 904, 1024, 1180, 1181, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 954 });
+    const layout = await page.locator('.room-header').evaluate(header => {
+      const bounds = header.getBoundingClientRect();
+      const title = header.querySelector('.room-title')!.getBoundingClientRect();
+      const actions = header.querySelector('.room-actions')!.getBoundingClientRect();
+      const label = header.querySelector('.room-title b')!;
+      const controls = [...header.querySelectorAll('.room-actions button')].filter(e => e.getBoundingClientRect().width > 0);
+      return {
+        titleFits: label.clientHeight <= parseFloat(getComputedStyle(label).lineHeight) + 1,
+        separated: title.right <= actions.left,
+        controlsFit: controls.every(e => { const r = e.getBoundingClientRect(); return r.top >= bounds.top && r.bottom <= bounds.bottom && r.right <= bounds.right && e.scrollHeight <= e.clientHeight + 1; }),
+        overflow: document.documentElement.scrollWidth - innerWidth,
+      };
+    });
+    expect(layout, `Header at ${width}px`).toEqual({ titleFits: true, separated: true, controlsFit: true, overflow: 0 });
+  }
+  await page.setViewportSize({ width: 904, height: 954 });
+  await page.getByRole('button', { name: 'Finish for now' }).click();
+  await expect(page.getByRole('button', { name: 'Resume 3 remaining' })).toBeVisible();
+});
