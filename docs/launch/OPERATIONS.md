@@ -18,7 +18,7 @@ Vercel logs contain structured `api_error` references and `health_check_failed` 
 
 The September 28 known deployment is `dpl_9yTS7oyAL87cQywnJkf7AgkgScWU`. It predates the September 29 dependency patches; prefer fixing forward over prolonged rollback to a vulnerable dependency version. Vercel rollback changes application code, not Linear estimates or database data. Retain additive migrations 0006/0007 when rolling application code back.
 
-Before public promotion, reauthenticate Neon administration, confirm the project's configured restore window, and practice restoring to a new isolated branch at a known timestamp. Verify migration ledger, row counts, and representative referential integrity there, then remove the disposable branch. Never overwrite production as a drill. Database credentials alone are not proof of platform restore permission. Keep the token encryption key recoverable in the existing secret manager; do not rotate it casually or copy it into this repository.
+The September 30 [isolated restore drill](RESTORE-DRILL.md) passed for current schema/account data. The configured restore window is only 6 hours. Before broad public promotion, select a suitable retention window and repeat recovery with populated disposable sessions. For future drills, restore to a new isolated branch at a known timestamp. Verify migration ledger, row counts, and representative referential integrity there, then remove the disposable branch. Never overwrite production as a drill. Database credentials alone are not proof of platform restore permission. Keep the token encryption key recoverable in the existing secret manager; do not rotate it casually or copy it into this repository.
 
 Reference: https://neon.com/docs/introduction/branch-restore
 

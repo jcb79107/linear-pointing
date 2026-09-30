@@ -24,7 +24,7 @@ The verified app is deployed, but GitHub branch publication is incomplete: CLI a
 ## Required before broad promotion
 
 1. Run a full session using a disposable Linear team and two authorized accounts: import the configured cycle, reorder/remove, browse independently, vote privately, reconnect, reveal, save an estimate, verify Linear, then delete the session. Repeat authorization checks across a second workspace. Live sign-in/team listing succeeded, but the available account exposed only an employer workspace, so no test session or ticket mutation was performed there.
-2. Reauthenticate Neon administration, confirm the restore window, and perform an isolated restore drill. Existing administrative authentication was invalid. Automatic approval review rejected GitHub-based Neon sign-in without account-specific authorization for private database resources. The maintainer must authorize or perform that sign-in; database access alone is not a restore test.
+2. Historical recovery was verified in an isolated branch: see [restore drill](RESTORE-DRILL.md). Retention is only 6 hours. Choose a longer recovery window before relying on this for broader use, and repeat with populated disposable sessions; the current database has none.
 3. Run the small pilot with 2–3 real teams and observe a complete session. Collect failures and task friction, not just preferences. No pilot evidence is claimed.
 4. Confirm failure notifications reach the maintainer. Health checks cover availability, not every application error. Measure actual traffic before claiming Core Web Vitals targets.
 
