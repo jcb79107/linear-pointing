@@ -84,7 +84,26 @@ export interface SessionRound {
   createdAt: string;
 }
 
+export interface TeamDefaults {
+  cycleOffset: 0 | 1 | 2 | 3 | "backlog";
+  defaultSort: "linear" | "priority" | "oldest";
+  autoReveal: boolean;
+  facilitatorVotes: boolean;
+}
+
+export interface SessionIntake {
+  cycleOffset: TeamDefaults["cycleOffset"];
+  cycleId: string | null;
+  name: string;
+  startsAt: string | null;
+  endsAt: string | null;
+}
+
 export interface SessionSnapshot {
+  autoReveal?: boolean;
+  intake?: SessionIntake | null;
+  defaults?: TeamDefaults;
+
   id: string;
   code: string;
   title: string;
@@ -159,7 +178,7 @@ export type PointingPreset =
 export type TicketCycleScope = "upcoming" | "active" | "any";
 export type TicketEstimateScope = "unestimated" | "estimated" | "any";
 export type TicketAssigneeScope = "anyone" | "me" | "unassigned";
-export type PointableStateType = "backlog" | "unstarted" | "started";
+export type PointableStateType = "backlog" | "unstarted" | "started" | "triage";
 export type QueueSortPreset =
   | "manual"
   | "linear"

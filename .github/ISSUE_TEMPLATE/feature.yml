@@ -1,0 +1,16 @@
+name: Workflow improvement
+description: Describe a problem your team needs to solve.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is difficult today?
+      description: Describe the pointing workflow, without private ticket contents.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would a good outcome look like?
+    validations:
+      required: true

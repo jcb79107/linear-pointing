@@ -1,4 +1,5 @@
 import { ArrowRight, LogIn } from "lucide-react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Brand } from "@/components/Brand";
@@ -35,8 +36,8 @@ export default async function AppHome({
             <p>Use your Linear account to create or join a pointing session.</p>
           </div>
           {authError && (
-            <div className="form-error">
-              {authErrors[authError] ?? "Linear sign-in could not be completed."}
+            <div className="form-error" role="alert">
+              {Object.hasOwn(authErrors, authError) ? authErrors[authError] : "Linear sign-in could not be completed."}
             </div>
           )}
           <a
@@ -57,6 +58,10 @@ export default async function AppHome({
           >
             Review the open-source code and data flow
           </a>
+          <nav className="auth-discovery-links" aria-label="More about Pointed">
+            <Link href="/">How Pointed works</Link>
+            <Link href="/demo">Try the sample session</Link>
+          </nav>
         </section>
       </main>
     );

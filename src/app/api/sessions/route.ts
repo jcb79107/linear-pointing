@@ -4,7 +4,7 @@ import { requireCurrentUser } from "@/lib/auth";
 import { apiError, assertSameOrigin } from "@/lib/http";
 import { resolvePointingCards } from "@/lib/estimates";
 import { getLinearTeam, hasLinearWriteScope } from "@/lib/linear";
-import { getUserSettings } from "@/lib/settings";
+import { getTeamDefaults } from "@/lib/team-settings";
 import { createPokerSession, listPokerSessions } from "@/lib/sessions";
 
 const createSessionSchema = z.object({
@@ -38,11 +38,11 @@ export async function POST(request: Request) {
     const input = createSessionSchema.parse(await request.json());
     const [team, settings] = await Promise.all([
       getLinearTeam(user.id, input.teamId),
-      getUserSettings(user.id),
+      getTeamDefaults(user, input.teamId),
     ]);
     let pointingCards;
     try {
-      pointingCards = resolvePointingCards(settings, team);
+      pointingCards = resolvePointingCards({ pointingPreset: "linear-team", customPointValues: [] }, team);
     } catch (error) {
       throw new Error(
         `UNPROCESSABLE:${
@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       team,
       pointingCards,
       autoReveal: settings.autoReveal,
+      defaults: settings,
     });
     return Response.json({ session }, { status: 201 });
   } catch (error) {

@@ -37,6 +37,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { Brand, PointedMark } from "@/components/Brand";
+import { SlackInviteButton } from "@/components/SlackInviteButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { requestJson } from "@/lib/client-request";
 import type {
@@ -45,7 +46,6 @@ import type {
   ParticipantRole,
   SessionParticipant,
   SessionSnapshot,
-  UserSettings,
   VoteValue,
 } from "@/lib/domain";
 import { voteLabel } from "@/lib/estimates";
@@ -61,10 +61,7 @@ import { accumulatedElapsedSeconds } from "@/lib/timing";
 interface LiveRoomProps {
   initialSnapshot: SessionSnapshot;
   demoMode?: boolean;
-  intakeDefaults?: Pick<
-    UserSettings,
-    "cycleScope" | "stateTypes" | "estimateScope" | "assigneeScope"
-  >;
+
 }
 
 interface RoomApiResponse {
@@ -72,12 +69,6 @@ interface RoomApiResponse {
   snapshot?: SessionSnapshot;
 }
 
-const defaultIntakeDefaults: NonNullable<LiveRoomProps["intakeDefaults"]> = {
-  cycleScope: "any",
-  stateTypes: ["unstarted"],
-  estimateScope: "unestimated",
-  assigneeScope: "anyone",
-};
 
 function initials(name: string) {
   return name
@@ -170,11 +161,13 @@ function localRound(
 export function LiveRoom({
   initialSnapshot,
   demoMode = false,
-  intakeDefaults = defaultIntakeDefaults,
 }: LiveRoomProps) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [busy, setBusy] = useState(false);
+  const [browsingId, setBrowsingId] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<SessionSnapshot["queue"][number] | null>(null);
+  const [conflict, setConflict] = useState<{ action: string; payload: Record<string, unknown>; message: string } | null>(null);
   const [voteBusy, setVoteBusy] = useState(false);
   const [refreshingIssue, setRefreshingIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -211,6 +204,15 @@ export function LiveRoom({
         .map((person) => person.id),
     ),
   );
+  useEffect(() => {
+    if (!browsingId || demoMode) return;
+    const controller = new AbortController();
+    fetch(`/api/sessions/${initialSnapshot.id}/preview?itemId=${encodeURIComponent(browsingId)}`, { signal: controller.signal })
+      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "Could not refresh preview"); if (!controller.signal.aborted) setPreviewItem(data.item); })
+      .catch(error => { if (!controller.signal.aborted) setPreviewNotice(`${error.message}. Showing the saved ticket preview.`); });
+    return () => controller.abort();
+  }, [browsingId, demoMode, initialSnapshot.id]);
+
   const refreshInFlight = useRef<Promise<boolean> | null>(null);
   const addIssueDialogRef = useRef<HTMLElement>(null);
   const addIssueReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -351,13 +353,15 @@ export function LiveRoom({
   const activeItem = snapshot.queue.find(
     (item) => item.id === snapshot.activeItemId,
   );
+  const viewedItem = (browsingId && previewItem?.id === browsingId ? previewItem : snapshot.queue.find(item => item.id === browsingId)) ?? activeItem;
+  const browsing = Boolean(viewedItem && viewedItem.id !== activeItem?.id);
   const me = snapshot.participants.find(
     (person) => person.id === snapshot.currentUserId,
   );
   const isFacilitator = snapshot.currentUserRole === "facilitator";
   const isEligibleVoter =
     Boolean(snapshot.round?.eligibleVoterIds.includes(snapshot.currentUserId));
-  const canVote = snapshot.round?.status === "voting" && isEligibleVoter;
+  const canVote = snapshot.round?.status === "voting" && isEligibleVoter && !browsing;
   const revealed =
     snapshot.round?.status === "revealed" ||
     snapshot.round?.status === "finalized";
@@ -368,13 +372,13 @@ export function LiveRoom({
       item.status === "skipped",
   ).length;
   const attachedFigmaDesigns =
-    activeItem?.attachments?.filter(
+    viewedItem?.attachments?.filter(
       (attachment) =>
         attachment.sourceType?.toLowerCase() === "figma" ||
         isFigmaUrl(attachment.url),
     ) ?? [];
   const describedFigmaDesigns = extractFigmaUrls(
-    activeItem?.description,
+    viewedItem?.description,
   ).map((url, index) => ({
     id: `description-figma-${index}`,
     title: figmaPreviewTitle(url),
@@ -390,7 +394,7 @@ export function LiveRoom({
       all.findIndex((candidate) => candidate.url === attachment.url) === index,
   );
   const otherAttachments =
-    activeItem?.attachments?.filter(
+    viewedItem?.attachments?.filter(
       (attachment) =>
         !attachedFigmaDesigns.some((item) => item.id === attachment.id),
     ) ?? [];
@@ -743,6 +747,7 @@ export function LiveRoom({
     overwrite = false,
   ) {
     setError(null);
+    setBrowsingId(null);
     if (demoMode) {
       demoAction(actionName, payload);
       if (["activate", "finalize", "skip", "finish"].includes(actionName)) {
@@ -752,7 +757,7 @@ export function LiveRoom({
     }
     setBusy(true);
     try {
-      let shouldOverwrite = overwrite;
+      const shouldOverwrite = overwrite;
       while (true) {
         const { data, response } = await requestJson<RoomApiResponse>(
           `/api/sessions/${snapshot.id}/actions`,
@@ -767,12 +772,8 @@ export function LiveRoom({
           },
         );
         if (response.status === 409 && !shouldOverwrite) {
-          const confirmed = window.confirm(
-            `${data.error ?? "Linear changed"}\n\nOverwrite it?`,
-          );
-          if (!confirmed) return;
-          shouldOverwrite = true;
-          continue;
+          setConflict({ action: actionName, payload, message: data.error ?? "This estimate changed in Linear." });
+          return;
         }
         if (!response.ok) {
           throw new Error(data.error ?? "Could not update the session");
@@ -782,6 +783,7 @@ export function LiveRoom({
             setFinalEstimate(null);
           }
           setSnapshot(data.snapshot);
+          if (actionName === "finalize") setPreviewNotice(`${activeItem?.identifier ?? "Estimate"} saved to Linear.`);
           setSyncState("connected");
         } else {
           await refresh();
@@ -839,9 +841,13 @@ export function LiveRoom({
     const url = demoMode
       ? `${window.location.origin}/demo`
       : `${window.location.origin}/s/${snapshot.code}`;
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setError(`Could not copy automatically. Select and copy this link: ${url}`);
+    }
   }
 
   async function deleteSession() {
@@ -876,10 +882,12 @@ export function LiveRoom({
     try {
       const params = new URLSearchParams({
         teamId: snapshot.teamId,
-        cycleScope: intakeDefaults.cycleScope,
-        stateTypes: intakeDefaults.stateTypes.join(","),
-        estimateScope: intakeDefaults.estimateScope,
-        assigneeScope: intakeDefaults.assigneeScope,
+        cycleScope: "any",
+        ...(snapshot.intake?.cycleId ? { cycleId: snapshot.intake.cycleId } : {}),
+        ...(snapshot.intake?.cycleOffset === "backlog" ? { noCycle: "true" } : {}),
+        stateTypes: "backlog,unstarted,started,triage",
+        estimateScope: "unestimated",
+        assigneeScope: "anyone",
         ...(searchQuery.trim() ? { query: searchQuery.trim() } : {}),
       });
       const response = await fetch(`/api/linear/issues?${params}`);
@@ -921,8 +929,7 @@ export function LiveRoom({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           issueIds: [issue.id],
-          stateTypes: intakeDefaults.stateTypes,
-          estimateScope: intakeDefaults.estimateScope,
+
         }),
       });
       const data = await response.json();
@@ -969,6 +976,7 @@ export function LiveRoom({
       event.metaKey ||
       event.ctrlKey ||
       event.altKey ||
+      document.querySelector('[role="dialog"][aria-modal="true"]') ||
       target?.closest("input, textarea, select, [contenteditable='true']")
     ) {
       return;
@@ -1038,13 +1046,13 @@ export function LiveRoom({
             <b>{snapshot.title}</b>
             <span>
               <i className="live-dot" />
-              {snapshot.status === "live" ? "Live session" : snapshot.status}
+              {demoMode ? "Demo session" : snapshot.status === "live" ? "Live session" : snapshot.status}
             </span>
           </div>
         </div>
         <div className="room-progress">
           <span>
-            {completed} / {snapshot.queue.length} decided
+            {snapshot.queue.filter(item => item.status === "estimated").length} estimated · {snapshot.queue.filter(item => item.status === "skipped").length} skipped · {snapshot.queue.length - completed} remaining
           </span>
           <div>
             <i
@@ -1089,14 +1097,17 @@ export function LiveRoom({
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? "Copied" : "Copy link"}
           </button>
+          {isFacilitator && !demoMode && <SlackInviteButton sessionId={snapshot.id} title={snapshot.title} teamName={snapshot.teamName} issueCount={snapshot.queue.length} code={snapshot.code} />}
           {isFacilitator && snapshot.status === "live" && (
             <button
+              aria-label="Finish for now"
+              title="Finish for now"
               className="finish-session-button"
               disabled={busy}
               onClick={() => void action("finish")}
               type="button"
             >
-              <PauseCircle size={15} /> Finish for now
+              <PauseCircle size={15} /> <span>Finish for now</span>
             </button>
           )}
           {isFacilitator && !demoMode && (
@@ -1130,7 +1141,13 @@ export function LiveRoom({
         )}
       </header>
 
-      {error && <div className="room-error">{error}</div>}
+      {demoMode && (
+        <div className="demo-notice" role="note">
+          <span>Demo · Nothing is saved to Linear.</span>
+          <nav aria-label="Demo role"><Link aria-current={isFacilitator ? "page" : undefined} href="/demo">Facilitator</Link><Link aria-current={!isFacilitator ? "page" : undefined} href="/demo?role=voter">Participant</Link></nav>
+        </div>
+      )}
+      {error && <div className="room-error" role="alert">{error}</div>}
       {previewNotice && <div className="room-notice">{previewNotice}</div>}
       {syncState !== "connected" && (
         <div className="room-sync-status" role="status">
@@ -1292,6 +1309,8 @@ export function LiveRoom({
         }
       />
 
+      <ConfirmDialog open={Boolean(conflict)} variant="primary" title="Estimate changed in Linear" description={conflict?.message ?? ""} detail="Review the change before replacing the existing estimate." confirmLabel="Save my estimate" onCancel={() => setConflict(null)} onConfirm={() => { if (conflict) { const next = conflict; setConflict(null); void action(next.action, next.payload, true); } }} />
+      <div className="mobile-agenda-nav"><label>{isFacilitator ? "Go to ticket" : "Browse agenda"}<select disabled={busy} value={viewedItem?.id ?? ""} onChange={event => { if (isFacilitator) void action("activate", { queueItemId: event.target.value }); else setBrowsingId(event.target.value); }}><option value="" disabled>Choose a ticket</option>{snapshot.queue.map(item => <option key={item.id} value={item.id}>{item.identifier} · {item.title} · {item.status === "active" ? "Current" : item.status}</option>)}</select></label></div>
       <section className="room-grid">
         <aside className="room-queue">
           <div className="pane-heading">
@@ -1317,9 +1336,9 @@ export function LiveRoom({
                 <div className="room-ticket-row" key={item.id}>
                   <button
                     className={`room-ticket ${item.id === snapshot.activeItemId ? "active" : ""} ${item.status}`}
-                    disabled={!isFacilitator || busy}
+                    disabled={busy}
                     onClick={() =>
-                      void action("activate", { queueItemId: item.id })
+                      isFacilitator ? void action("activate", { queueItemId: item.id }) : setBrowsingId(item.id)
                     }
                     type="button"
                   >
@@ -1385,19 +1404,20 @@ export function LiveRoom({
         </aside>
 
         <section className="room-issue">
-          {activeItem ? (
+          {browsing && <div className="browse-notice" role="status"><span>Previewing {viewedItem?.identifier}. The team is on {activeItem?.identifier ?? "the summary"}.</span><button type="button" onClick={() => setBrowsingId(null)}>Return to current ticket</button></div>}
+          {viewedItem ? (
             <>
               <div className="issue-scroll">
                 <div className="issue-meta-row">
-                  <span>{activeItem.identifier}</span>
+                  <span>{viewedItem.identifier}</span>
                   <i />
-                  <span>{activeItem.priorityLabel ?? "No priority"}</span>
+                  <span>{viewedItem.priorityLabel ?? "No priority"}</span>
                   <i />
-                  <span>{activeItem.stateName ?? "No status"}</span>
+                  <span>{viewedItem.stateName ?? "No status"}</span>
                   <div className="issue-source-actions">
                     <button
                       aria-label="Refresh ticket preview from Linear"
-                      disabled={refreshingIssue}
+                      disabled={refreshingIssue || browsing}
                       onClick={() => void refreshLinearPreview()}
                       title="Refresh title, description, project, designs, and metadata from Linear"
                       type="button"
@@ -1408,23 +1428,23 @@ export function LiveRoom({
                       />
                       {refreshingIssue ? "Refreshing…" : "Refresh"}
                     </button>
-                    <a href={activeItem.url} target="_blank" rel="noreferrer">
+                    <a href={viewedItem.url} target="_blank" rel="noreferrer">
                       Open in Linear <ExternalLink size={13} />
                     </a>
                   </div>
                 </div>
-                <h1>{activeItem.title}</h1>
+                <h1>{viewedItem.title}</h1>
                 <div className="issue-tags">
-                  {activeItem.projectName && (
+                  {viewedItem.projectName && (
                     <span className="issue-project-tag">
-                      Project · {activeItem.projectName}
+                      Project · {viewedItem.projectName}
                     </span>
                   )}
-                  {activeItem.labels.map((label) => (
+                  {viewedItem.labels.map((label) => (
                     <span key={label}>{label}</span>
                   ))}
-                  {activeItem.assigneeName && (
-                    <span>Owner · {activeItem.assigneeName}</span>
+                  {viewedItem.assigneeName && (
+                    <span>Owner · {viewedItem.assigneeName}</span>
                   )}
                 </div>
                 {figmaAttachments.length > 0 && (
@@ -1464,7 +1484,7 @@ export function LiveRoom({
                   </section>
                 )}
                 <div className="issue-description">
-                  {activeItem.description ? (
+                  {viewedItem.description ? (
                     <ReactMarkdown
                       components={{
                         a: ({ children, ...props }) => (
@@ -1488,7 +1508,7 @@ export function LiveRoom({
                       rehypePlugins={[rehypeSanitize]}
                       remarkPlugins={[remarkGfm]}
                     >
-                      {activeItem.description}
+                      {viewedItem.description}
                     </ReactMarkdown>
                   ) : (
                     <p className="empty-description">
@@ -1497,10 +1517,10 @@ export function LiveRoom({
                     </p>
                   )}
                 </div>
-                {(activeItem.subIssues?.length ?? 0) > 0 && (
+                {(viewedItem.subIssues?.length ?? 0) > 0 && (
                   <section className="sub-issues">
                     <h3>Sub-issues</h3>
-                    {activeItem.subIssues.map((subIssue) => (
+                    {viewedItem.subIssues.map((subIssue) => (
                       <div key={subIssue.id}>
                         <span>{subIssue.identifier}</span>
                         <b>{subIssue.title}</b>
@@ -1538,6 +1558,7 @@ export function LiveRoom({
                     )}
                   </span>
                 </div>
+                {revealed && <div className="mobile-revealed-votes" aria-label="Revealed votes">{eligibleParticipants.map(person => <span key={person.id}><b>{person.name.split(" ")[0]}</b><strong>{person.vote === null ? "No vote" : voteLabel(person.vote, snapshot.estimateCards)}</strong></span>)}</div>}
                 {isEligibleVoter ? (
                   <div className="voter-controls">
                     <div className="vote-cards">
@@ -1560,6 +1581,7 @@ export function LiveRoom({
                         </button>
                       ))}
                     </div>
+                    {demoMode && !isFacilitator && !revealed && <button className="text-action" disabled={!me?.hasVoted || browsing} onClick={() => demoAction("reveal", {})} type="button">Show team votes</button>}
                   </div>
                 ) : isFacilitator ? (
                   <div
@@ -1577,7 +1599,7 @@ export function LiveRoom({
                           ? "Review the suggested result and set the final estimate."
                           : eligibleVoterCount === 0
                             ? "Invite teammates, or set the estimate yourself when discussion is done."
-                          : "Votes reveal automatically when everyone has voted."}
+                          : snapshot.autoReveal === false ? "Reveal the votes when the team is ready." : "Votes reveal automatically when everyone has voted."}
                       </span>
                     </div>
                     {eligibleVoterCount === 0 && !revealed && (
@@ -1609,6 +1631,8 @@ export function LiveRoom({
             />
           ) : (
             <SessionSummary
+              busy={busy}
+              demoMode={demoMode}
               cards={snapshot.estimateCards}
               isFacilitator={isFacilitator}
               items={snapshot.queue}
@@ -1652,6 +1676,7 @@ export function LiveRoom({
             <div className="facilitator-controls">
               {revealed ? (
                 <>
+                  {revealedVotes.length > 1 && new Set(revealedVotes).size > 1 && <p className="vote-disagreement">Votes range from {voteSpread}. Discuss the difference before choosing.</p>}
                   <div className="result-label">
                     <span>FINAL ESTIMATE</span>
                     <small>
@@ -1663,12 +1688,13 @@ export function LiveRoom({
                               suggestedFinalEstimate,
                               snapshot.estimateCards,
                             )}`}
-                      {voteSpread && ` · spread ${voteSpread}`}
+                      {voteSpread && ` · votes ${voteSpread}`}
                     </small>
                   </div>
                   <div className="final-values">
                     {snapshot.estimateCards.map((card) => (
                       <button
+                        aria-pressed={selectedFinalEstimate === card.value}
                         className={
                           selectedFinalEstimate === card.value ? "selected" : ""
                         }
@@ -1731,7 +1757,7 @@ export function LiveRoom({
                 onClick={() => void action("skip")}
                 type="button"
               >
-                <SkipForward size={14} /> Skip ticket
+                <SkipForward size={14} /> Skip
               </button>
             </div>
           )}
@@ -1846,6 +1872,8 @@ function groomingOutcomeLabel(outcome: GroomingOutcome | null) {
 }
 
 function SessionSummary({
+  busy,
+  demoMode,
   items,
   cards,
   title,
@@ -1854,6 +1882,8 @@ function SessionSummary({
   sessionActiveStartedAt,
   sessionElapsedSeconds,
 }: {
+  busy: boolean;
+  demoMode: boolean;
   items: SessionSnapshot["queue"];
   cards: SessionSnapshot["estimateCards"];
   title: string;
@@ -1866,6 +1896,7 @@ function SessionSummary({
   const remaining = items.filter(
     (item) => item.status === "pending" || item.status === "active",
   );
+  const [copyFailed, setCopyFailed] = useState(false);
   const summaryText = [
     title,
     `Total time: ${formatDuration(
@@ -1893,9 +1924,14 @@ function SessionSummary({
   ].join("\n");
 
   async function copySummary() {
-    await navigator.clipboard.writeText(summaryText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(summaryText);
+      setCopyFailed(false);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopyFailed(true);
+    }
   }
 
   return (
@@ -1907,6 +1943,7 @@ function SessionSummary({
           <h1>{remaining.length ? "Finished for now." : "That’s the queue."}</h1>
           <p>
             {items.filter((item) => item.groomingOutcome === "ready" || item.status === "estimated").length} estimated ·{" "}
+            {items.filter(item => item.status === "skipped").length} skipped ·{" "}
             {remaining.length} remaining ·{" "}
             <ElapsedTimer
               activeStartedAt={sessionActiveStartedAt}
@@ -1925,24 +1962,31 @@ function SessionSummary({
                 ? "skipped"
                 : null);
           return (
-            <a href={item.url} key={item.id} rel="noreferrer" target="_blank">
+            <div className="summary-item" key={item.id}><a href={item.url} rel="noreferrer" target="_blank">
               <div>
                 <b>{item.identifier}</b>
                 <span>{item.title}</span>
               </div>
               <em className={outcome ?? "pending"}>
-                {groomingOutcomeLabel(outcome)}
+                {outcome === "ready" && !demoMode ? "Saved to Linear" : groomingOutcomeLabel(outcome)}
                 {item.finalEstimate !== null && ` · ${voteLabel(item.finalEstimate, cards)}`}
                 {item.elapsedSeconds > 0 && ` · ${formatDuration(item.elapsedSeconds)}`}
               </em>
-            </a>
+            </a>{isFacilitator && item.status === "skipped" && <button type="button" disabled={busy} onClick={() => onResume(item.id)}>Revisit {item.identifier}</button>}</div>
           );
         })}
       </div>
+      {copyFailed && (
+        <label>
+          <span role="alert">Could not copy automatically. Select and copy the summary below.</span>
+          <textarea className="resize-none" aria-label="Session summary to copy" readOnly rows={8} value={summaryText} />
+        </label>
+      )}
       <div className="session-summary-actions">
         {isFacilitator && remaining[0] && (
           <button
             className="button button-primary"
+            disabled={busy}
             onClick={() => onResume(remaining[0].id)}
             type="button"
           >

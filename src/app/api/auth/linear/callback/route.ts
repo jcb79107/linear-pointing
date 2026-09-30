@@ -29,17 +29,24 @@ export async function GET(request: Request) {
   const returnTo = safeReturnTo(
     cookieStore.get("linear_oauth_return")?.value ?? null,
   );
+  const redirectWithAuthError = (authError: string) => {
+    const destination = new URL(returnTo, env.APP_URL);
+    destination.searchParams.set("authError", authError);
+    return NextResponse.redirect(destination);
+  };
 
-  if (!validOAuthState(state, expectedState) || !verifier || !code) {
+  if (!validOAuthState(state, expectedState) || !verifier) {
     console.warn("Linear OAuth callback rejected invalid state", {
       hasState: Boolean(state),
       hasExpectedState: Boolean(expectedState),
       hasVerifier: Boolean(verifier),
       hasCode: Boolean(code),
     });
-    return NextResponse.redirect(
-      new URL("/app?authError=invalid_oauth_state", env.APP_URL),
-    );
+    return redirectWithAuthError("invalid_oauth_state");
+  }
+
+  if (!code || requestUrl.searchParams.has("error")) {
+    return redirectWithAuthError("token_exchange_failed");
   }
 
   const tokenResponse = await fetch("https://api.linear.app/oauth/token", {
@@ -71,9 +78,7 @@ export async function GET(request: Request) {
           ? failure.error_description.slice(0, 240)
           : null,
     });
-    return NextResponse.redirect(
-      new URL("/app?authError=token_exchange_failed", env.APP_URL),
-    );
+    return redirectWithAuthError("token_exchange_failed");
   }
 
   const tokens = (await tokenResponse.json()) as TokenResponse;

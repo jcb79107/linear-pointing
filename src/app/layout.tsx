@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   },
   applicationName: "Pointed",
   description:
-    "Open-source pointing poker for Linear. Import issues, vote privately, and write estimates back.",
+    "Run private pointing sessions on Linear issues. Discuss the result, then let the facilitator choose what to save.",
   icons: {
     icon: "/pointed-mark.svg",
     shortcut: "/pointed-mark.svg",
@@ -23,14 +23,14 @@ export const metadata: Metadata = {
     "open source",
   ],
   openGraph: {
-    title: "Pointed",
-    description: "Pointing poker for Linear.",
+    title: "Pointed · Team estimates for Linear",
+    description: "Bring issues into a shared room. Vote privately, discuss together, and let the facilitator confirm each estimate in Linear.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Pointed",
-    description: "Pointing poker for Linear.",
+    title: "Pointed · Team estimates for Linear",
+    description: "Bring issues into a shared room. Vote privately, discuss together, and let the facilitator confirm each estimate in Linear.",
   },
 };
 

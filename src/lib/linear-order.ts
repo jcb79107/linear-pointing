@@ -41,3 +41,9 @@ export function findUpcomingLinearCycle(
     number: next.number,
   };
 }
+
+// Cycle offsets count scheduled cycles, not weeks; this also handles cooldowns.
+export function resolveCycleOffset<T extends { startsAt: Date; endsAt: Date }>(cycles: readonly T[], offset: 0 | 1 | 2 | 3, now = new Date()): T | null {
+  if (offset === 0) return cycles.find(c => c.startsAt <= now && c.endsAt > now) ?? null;
+  return [...cycles].filter(c => c.startsAt > now).sort((a, b) => +a.startsAt - +b.startsAt)[offset - 1] ?? null;
+}

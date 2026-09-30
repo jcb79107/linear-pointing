@@ -1,0 +1,10 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src/components"],
+  "locale": "en",
+  "canonicalMap": "UX-CONTRACT.md",
+  "ownership": { "Select/Listbox": "native" },
+  "requiredCapabilities": ["Select/Listbox", "Form"],
+  "commands": { "unit": "npm test", "e2e": "npm run test:ui", "lint": "npm run lint", "typecheck": "npm run typecheck" },
+  "evidence": { "crudFullFlow": "tests/e2e/cycle-preview.spec.ts", "failurePaths": "src/lib/cycle-workflow.test.ts" }
+}

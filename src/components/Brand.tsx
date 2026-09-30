@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export function PointedMark({
@@ -40,7 +41,15 @@ export function PointedMark({
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Link aria-label="Pointed home" className="brand" href="/">
-      <PointedMark className="brand-mark" size={compact ? 26 : 28} />
+      <Image
+        alt=""
+        aria-hidden="true"
+        className="brand-mark"
+        height={compact ? 26 : 28}
+        src="/pointed-mark.svg"
+        unoptimized
+        width={compact ? 26 : 28}
+      />
       {!compact && <span>Pointed</span>}
     </Link>
   );

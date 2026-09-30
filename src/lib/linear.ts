@@ -18,10 +18,13 @@ import type {
   PointableStateType,
   TicketAssigneeScope,
   TicketEstimateScope,
+  TeamDefaults,
+  SessionIntake,
 } from "@/lib/domain";
 import { getServerEnv } from "@/lib/env";
 import {
   findUpcomingLinearCycle,
+  resolveCycleOffset,
   sortByLinearManualOrder,
   type UpcomingLinearCycle,
 } from "@/lib/linear-order";
@@ -38,6 +41,7 @@ export interface IssueSearchFilters {
   teamId: string;
   query?: string;
   cycleId?: string;
+  noCycle?: boolean;
   projectId?: string;
   labelId?: string;
   stateTypes: PointableStateType[];
@@ -256,7 +260,7 @@ export async function searchLinearIssues(
       const issue = await client.issue(identifierQuery);
       const [team, cycle, project, state, labels, assignee] = await Promise.all([
         issue.team,
-        filters.cycleId ? issue.cycle : Promise.resolve(undefined),
+        (filters.cycleId || filters.noCycle) ? issue.cycle : Promise.resolve(undefined),
         filters.projectId ? issue.project : Promise.resolve(undefined),
         issue.state,
         filters.labelId ? issue.labels() : Promise.resolve(undefined),
@@ -283,6 +287,7 @@ export async function searchLinearIssues(
         policyMatches &&
         assigneeMatches &&
         (!filters.cycleId || cycle?.id === filters.cycleId) &&
+        (!filters.noCycle || !cycle) &&
         (!filters.projectId || project?.id === filters.projectId) &&
         (!filters.labelId ||
           labels?.nodes.some((label) => label.id === filters.labelId));
@@ -298,6 +303,7 @@ export async function searchLinearIssues(
     ...(filters.query
       ? { title: { containsIgnoreCase: filters.query } }
       : {}),
+    ...(filters.noCycle ? { cycle: { null: true } } : {}),
     ...(filters.cycleId
       ? { cycle: { id: { eq: filters.cycleId } } }
       : {}),
@@ -531,4 +537,21 @@ export async function hasLinearWriteScope(userId: string): Promise<boolean> {
     .where(eq(linearConnections.userId, userId))
     .limit(1);
   return connection?.scopes.includes("write") ?? false;
+}
+
+export async function resolveSessionIntake(userId: string, teamId: string, offset: TeamDefaults["cycleOffset"]): Promise<SessionIntake> {
+  if (offset === "backlog") return { cycleOffset: offset, cycleId: null, name: "Backlog / no cycle", startsAt: null, endsAt: null };
+  const client = await getLinearClient(userId);
+  const team = await client.team(teamId);
+  const connection = await team.cycles({ first: 100, filter: { or: [{ isActive: { eq: true } }, { isFuture: { eq: true } }] } });
+  while (connection.pageInfo.hasNextPage) await connection.fetchNext();
+  const cycle = resolveCycleOffset(connection.nodes, offset);
+  if (!cycle) throw new Error(`UNPROCESSABLE:${offset === 0 ? "The current cycle" : offset === 1 ? "The next cycle" : `The cycle ${offset} cycles ahead`} does not exist yet. Choose another cycle or use the backlog.`);
+  return { cycleOffset: offset, cycleId: cycle.id, name: cycle.name ?? `Cycle ${cycle.number}`, startsAt: cycle.startsAt.toISOString(), endsAt: cycle.endsAt.toISOString() };
+}
+export async function loadIntakeIssues(userId: string, teamId: string, intake: SessionIntake) {
+  return searchLinearIssues(userId, {
+    teamId, cycleId: intake.cycleId ?? undefined, noCycle: intake.cycleOffset === "backlog",
+    stateTypes: ["backlog", "unstarted", "started", "triage"], estimateScope: "unestimated", assigneeScope: "anyone", assigneeId: "",
+  }, { fetchAll: true, preserveManualOrder: true });
 }

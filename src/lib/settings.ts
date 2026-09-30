@@ -41,7 +41,7 @@ export async function saveUserSettings(
   userId: string,
   input: UserSettings,
 ): Promise<UserSettings> {
-  const value = userSettingsSchema.parse(input);
+  const value = parseUserSettings(userSettingsSchema.parse(input));
   const persisted = {
     pointingPreset: value.pointingPreset,
     customPointValues: value.customPointValues,

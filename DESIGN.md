@@ -56,10 +56,10 @@ the same component hierarchy.
 | Hairline | `#23252a` | `#e2e2e5` | Dividers and borders |
 | Hairline strong | `#34343a` | `#c9c9cf` | Hover and focus boundaries |
 | Ink | `#f7f8f8` | `#1f2023` | Primary text |
-| Ink muted | `#d0d6e0` | `#6f7178` | Secondary text |
-| Ink subtle | `#8a8f98` | `#8b8d94` | Metadata and disabled text |
+| Ink muted | `#d0d6e0` | `#60636b` | Secondary text |
+| Ink subtle | `#8a8f98` | `#60636b` | Metadata and disabled text |
 | Accent | `#5e6ad2` | `#5e6ad2` | Primary action and focus |
-| Accent hover | `#828fff` | `#6f7be3` | Interactive hover |
+| Accent hover | `#828fff` | `#4854b8` | Interactive hover |
 | Success | `#27a644` | `#248f4d` | Confirmed state only |
 
 ## Typography
@@ -135,3 +135,17 @@ font-family: "SF Pro Text", "SF Pro Display", Inter, ui-sans-serif,
 - Respect reduced-motion preferences.
 - Keyboard shortcuts must never fire while a user is typing in an input,
   textarea, select, or editable region.
+
+## Cycle workflow (September 2026)
+
+Keep preparation focused on a relative cycle and one agenda preview. Reuse the
+native controls in TeamDefaultFields across settings and preparation. Team defaults
+are explicitly saved; appearance is immediately saved on-device. Use the existing
+surface-1/surface-2, ink/muted, line, and blue tokens; do not add a second visual system.
+
+On narrow screens, agenda navigation stays above the issue and individual revealed
+votes appear in the vote dock. Browsing another ticket must visibly offer Return to
+current ticket and disable voting until the active issue is back in view. Explicit
+Move up/down controls supplement drag-and-drop at every width.
+
+UX-CONTRACT.md defines the interaction owners and verification paths.

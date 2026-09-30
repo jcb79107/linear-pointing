@@ -1,22 +1,28 @@
 "use client";
 
-import { AlertTriangle, Trash2 } from "lucide-react";
-import { useEffect, useId, useRef } from "react";
+import { AlertTriangle, Trash2, Send } from "lucide-react";
+import { useEffect, useId, useRef, type RefObject } from "react";
 
 export function ConfirmDialog({
   busy = false,
+  variant = "danger",
   confirmLabel,
   description,
   detail,
+  error,
+  returnFocusRef,
   onCancel,
   onConfirm,
   open,
   title,
 }: {
   busy?: boolean;
+  variant?: "danger" | "primary";
   confirmLabel: string;
   description: string;
   detail?: string;
+  error?: string | null;
+  returnFocusRef?: RefObject<HTMLButtonElement | null>;
   onCancel: () => void;
   onConfirm: () => void;
   open: boolean;
@@ -34,8 +40,14 @@ export function ConfirmDialog({
   }, [busy, onCancel]);
 
   useEffect(() => {
+    if (!open || dialogRef.current?.contains(document.activeElement)) return;
+    if (busy) dialogRef.current?.focus();
+    else cancelButtonRef.current?.focus();
+  }, [open, busy]);
+
+  useEffect(() => {
     if (!open) return;
-    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousFocus = returnFocusRef?.current ?? document.activeElement as HTMLElement | null;
     cancelButtonRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busyRef.current) {
@@ -46,10 +58,17 @@ export function ConfirmDialog({
       const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
-      if (!focusable?.length) return;
+      if (!focusable?.length) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!dialogRef.current?.contains(document.activeElement) || document.activeElement === dialogRef.current) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -62,7 +81,7 @@ export function ConfirmDialog({
       window.removeEventListener("keydown", handleKeyDown);
       previousFocus?.focus();
     };
-  }, [open]);
+  }, [open, returnFocusRef]);
 
   if (!open) return null;
 
@@ -79,14 +98,16 @@ export function ConfirmDialog({
         className="confirm-dialog"
         ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
-        <div className="confirm-dialog-icon">
-          <AlertTriangle size={20} />
+        <div className={`confirm-dialog-icon ${variant}`}>
+          {variant === "danger" ? <AlertTriangle size={20} /> : <Send size={20} />}
         </div>
         <div className="confirm-dialog-copy">
           <h2 id={titleId}>{title}</h2>
           <p>{description}</p>
           {detail && <div className="confirm-dialog-detail">{detail}</div>}
+          {error && <p role="alert">{error}</p>}
         </div>
         <div className="confirm-dialog-actions">
           <button
@@ -99,12 +120,12 @@ export function ConfirmDialog({
             Cancel
           </button>
           <button
-            className="button button-danger"
+            className={`button button-${variant}`}
             disabled={busy}
             onClick={onConfirm}
             type="button"
           >
-            <Trash2 size={15} />
+            {variant === "danger" ? <Trash2 size={15} /> : <Send size={15} />}
             {busy ? "Working…" : confirmLabel}
           </button>
         </div>

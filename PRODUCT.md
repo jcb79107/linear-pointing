@@ -1,74 +1,51 @@
 # Product direction
 
-## Mission
+Pointed is a focused pointing room for teams that already prepare their work in Linear.
+Everyone reads tickets on their own screen, votes independently, discusses differences,
+and agrees an estimate that the facilitator saves to Linear.
 
-Point Linear issues with the team and write the result back. Pointed is free,
-open source, and purpose-built for product managers and teams that already use
-Linear.
+## Values
 
-## Product principles
+- Linear is the source of truth for requirements, cycles, and estimate scales.
+- Tickets arrive ready to estimate; splitting and clarifying work happen beforehand.
+- Private votes protect independent judgment. An average is a suggestion, not consensus.
+- The facilitator keeps the session moving; participants control their own reading.
+- Defaults remove repetitive setup. Essential workflows work on phones and keyboards.
+- Explicit save feedback, recoverable errors, and clear remaining work earn trust.
 
-1. **Linear is the system of record.** Import from Linear, link back to Linear,
-   and write estimates to Linear.
-2. **The facilitator should stay in flow.** The current issue, votes, result,
-   and next issue belong on one screen.
-3. **Every discussion ends clearly.** Apply an estimate or skip the issue.
-4. **Defaults remove ceremony.** A team can reuse its preferred deck, intake
-   filters, Linear custom views, reveal behavior, and sort order.
-5. **Private votes, shared understanding.** Votes stay hidden until reveal;
-   consensus is a conversation aid, never an automatic product decision.
-6. **The default decision is explainable.** Average the submitted numeric votes
-   and round up to the next estimate value supported by the Linear team. The
-   facilitator can still choose another value after discussion.
-7. **Self-hosting stays boring.** Linear OAuth and Postgres are the only
-   required services. Realtime infrastructure is optional.
+## Workflow
 
-## Canonical product-manager workflow
+1. Prepare unestimated tickets in Linear and set their manual order.
+2. Create a session for a Linear team. Its shared defaults select current cycle,
+   next cycle (default), two or three cycles ahead, or backlog/no cycle.
+3. Load the agenda. Pointed resolves and pins the actual cycle, imports all
+   unestimated issues except completed/canceled work, and uses Linear's manual
+   sortOrder, priority, or oldest-first order. Zero is an estimate, not missing data.
+4. Review the preview, reorder or remove tickets, and share the session link.
+   Reordering/removal affects Pointed only. Reloading explicitly replaces this preview.
+5. Read independently and vote privately. Participants can browse other agenda
+   tickets and return to the current one; previewing disables voting on the wrong issue.
+6. Reveal automatically when everyone has voted, or let the facilitator reveal.
+   Facilitators can optionally vote. Discuss the individual votes and spread, choose
+   the final estimate, and save to Linear before advancing.
+7. Finish with estimated, skipped, and remaining counts. Resume unfinished work or
+   revisit a skipped ticket directly from the summary.
 
-1. A product manager prepares tickets in Linear before grooming.
-2. Shortly before the meeting, they create a pointing session and pull the
-   upcoming cycle's unestimated Todo tickets by default. Every intake rule is
-   editable, including custom Linear views.
-3. They review the queue, put the tickets in the desired order, copy the Slack
-   invite, and watch the team join with their Linear accounts.
-4. Once the room is loaded, the facilitator starts the session. Every developer
-   can inspect the Linear description, attachments, sub-issues, and linked Figma
-   at their own pace on a computer or phone.
-5. Developers vote privately. When votes reveal, the app averages them and
-   rounds up to the next valid Linear estimate card.
-6. The facilitator confirms or overrides the suggestion, writes it to Linear,
-   and advances to the next ticket.
-7. The room tracks total meeting time and time per ticket until the queue is
-   complete or the remaining issues are skipped.
+## Defaults and ownership
 
-## Deliberate non-goals
+The four shared team defaults are relative cycle, starting order, reveal behavior,
+and facilitator voting. Any user with access to that Linear team can edit them.
+Defaults are keyed by Linear organization and team. New sessions copy them; existing
+sessions keep their own choices and pinned cycle. Appearance stays personal/device-local.
+Linear's estimate scale is used automatically; there is no separate Pointed deck setting.
 
-- Jira, GitHub Issues, or generic task-tool integrations
-- AI-generated requirements or estimates
-- billing, subscriptions, or enterprise controls
-- a replacement for Linear projects, roadmaps, or reporting
+## Non-goals
 
-## Roadmap
+Replacing Linear's issue management, configurable intake query builders, requirements
+writing, AI estimates, automatic saving, Jira/GitHub integrations, or billing.
 
-### Now
+## Pilot verification
 
-- Make the full grooming loop fast, recoverable, and accessible.
-- Make Linear custom views and sensible personal defaults the shortest path to
-  a useful agenda.
-- Dogfood the public entry, waiting room, issue intake, keyboard workflow,
-  rounded-average decision, and meeting timers with real grooming teams.
-- Keep public setup documented and deployment reproducible.
-
-### Next
-
-- Let teams save a small number of reusable grooming profiles when one set of
-  personal defaults is no longer enough.
-- Add privacy-conscious, aggregate workflow measurements only after observed
-  sessions identify the questions they need to answer.
-- Add lightweight decision-history insights only when they improve ticket
-  preparation or meeting quality.
-
-### Later, only if users ask
-
-- Optional hosted convenience features that fund the open-source project while
-  preserving a complete free self-hosted product.
+Exercise invite, join, vote, reveal, save, refresh/rejoin, finish, and resume with two
+real users before opening the pilot. Include failed saves and wrong-workspace access.
+Synthetic fixtures and local tests do not substitute for those live integration checks.

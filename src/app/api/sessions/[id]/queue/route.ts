@@ -11,11 +11,7 @@ import {
 
 const addSchema = z.object({
   issueIds: z.array(z.string().min(1)).min(1).max(1000),
-  stateTypes: z
-    .array(z.enum(["backlog", "unstarted", "started"]))
-    .min(1)
-    .max(3),
-  estimateScope: z.enum(["unestimated", "estimated", "any"]),
+
 });
 const reorderSchema = z.object({
   orderedItemIds: z.array(z.string().uuid()).max(1000),
@@ -37,8 +33,8 @@ export async function POST(
       userId: user.id,
       issueIds: input.issueIds,
       policy: {
-        stateTypes: input.stateTypes,
-        estimateScope: input.estimateScope,
+        stateTypes: ["backlog", "unstarted", "started", "triage"],
+        estimateScope: "unestimated",
       },
     });
     return Response.json({ success: true });

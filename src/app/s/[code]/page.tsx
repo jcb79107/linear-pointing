@@ -9,11 +9,12 @@ import { getPublicSessionPreview } from "@/lib/sessions";
 export const dynamic = "force-dynamic";
 
 export default async function JoinPage({
-  params,
+  params, searchParams,
 }: {
   params: Promise<{ code: string }>;
+  searchParams: Promise<{ authError?: string }>;
 }) {
-  const { code } = await params;
+  const [{ code }, { authError }] = await Promise.all([params, searchParams]);
   const [user, session] = await Promise.all([
     getCurrentUser(),
     getPublicSessionPreview(code),
@@ -32,17 +33,24 @@ export default async function JoinPage({
               {session.issueCount === 1 ? "ticket" : "tickets"}
             </p>
           </div>
-          <p>
-            Sign in with Linear to verify team access, review each ticket, and
-            point from this device.
-          </p>
+          {authError ? (
+            <p className="join-auth-error" role="alert">
+              {authError === "invalid_oauth_state"
+                ? "That sign-in link expired. Your invitation is still here; start again below."
+                : "Linear sign-in did not finish. Your invitation is still here; try again when you’re ready."}
+            </p>
+          ) : (
+            <p>
+              Sign in with Linear to confirm you can view <strong>{session.teamName}</strong> and open the session tickets.
+            </p>
+          )}
           <a
             className="button button-primary button-large"
             href={`/api/auth/linear/start?returnTo=${encodeURIComponent(`/s/${code}`)}`}
           >
-            <LogIn size={18} /> Join with Linear <ArrowRight size={18} />
+            <LogIn size={18} /> Sign in with Linear <ArrowRight size={18} />
           </a>
-          <small>Only members with access to this Linear team can enter.</small>
+          <small>Votes stay private until reveal. Your facilitator saves the agreed estimate to Linear.</small>
         </section>
       </main>
     );

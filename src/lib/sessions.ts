@@ -33,6 +33,7 @@ import type {
   PointableStateType,
   TicketEstimateScope,
   VoteValue,
+  TeamDefaults,
 } from "@/lib/domain";
 import { isFinalizableEstimate } from "@/lib/estimates";
 import {
@@ -111,6 +112,7 @@ export async function createPokerSession(input: {
   team: LinearTeamSummary;
   pointingCards: EstimateCard[];
   autoReveal: boolean;
+  defaults?: TeamDefaults;
 }) {
   if (!input.pointingCards.length) throw new Error("Choose at least one pointing value");
 
@@ -129,6 +131,7 @@ export async function createPokerSession(input: {
         scaleExtended: input.team.issueEstimationExtended,
         pointingCards: input.pointingCards,
         autoReveal: input.autoReveal,
+        defaults: input.defaults,
       })
       .returning();
 
@@ -136,7 +139,7 @@ export async function createPokerSession(input: {
       sessionId: session.id,
       userId: input.userId,
       role: "facilitator",
-      votingEnabled: false,
+      votingEnabled: input.defaults?.facilitatorVotes ?? false,
     });
     return session;
   });
@@ -292,6 +295,8 @@ export async function reorderQueue(input: {
   }
 
   await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(pokerSessions).where(eq(pokerSessions.id, input.sessionId)).for("update");
+    if (locked.status !== "draft") throw new Error("UNPROCESSABLE:The session has started. Reload the room.");
     const existing = await tx
       .select({ id: queueItems.id })
       .from(queueItems)
@@ -333,8 +338,9 @@ export async function removeQueueItem(input: {
   userId: string;
   queueItemId: string;
 }) {
-  const { session } = await requireFacilitator(input.sessionId, input.userId);
+  await requireFacilitator(input.sessionId, input.userId);
   await db.transaction(async (tx) => {
+    const [session] = await tx.select().from(pokerSessions).where(eq(pokerSessions.id, input.sessionId)).for("update");
     const [item] = await tx
       .select({
         id: queueItems.id,
@@ -438,6 +444,10 @@ export async function startPokerSession(sessionId: string, userId: string) {
 
   const startedAt = new Date();
   await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(pokerSessions).where(eq(pokerSessions.id, sessionId)).for("update");
+    if (locked.status !== "draft") return;
+    const [currentFirst] = await tx.select().from(queueItems).where(eq(queueItems.sessionId, sessionId)).orderBy(asc(queueItems.position)).limit(1);
+    if (currentFirst?.id !== firstItem.id) throw new Error("UNPROCESSABLE:The agenda changed. Reload before starting.");
     await tx
       .update(pokerSessions)
       .set({
@@ -625,7 +635,7 @@ async function requireMembership(sessionId: string, userId: string) {
   return row;
 }
 
-async function requireFacilitator(sessionId: string, userId: string) {
+export async function requireFacilitator(sessionId: string, userId: string) {
   const membership = await requireMembership(sessionId, userId);
   if (!canFacilitate(membership.role)) throw new Error("FORBIDDEN");
   return membership;
@@ -715,6 +725,9 @@ export async function getSessionSnapshot(
     scaleType:
       session.scaleType as LinearTeamSummary["issueEstimationType"],
     estimateCards: session.pointingCards,
+    autoReveal: session.autoReveal,
+    intake: session.intake,
+    defaults: session.defaults ?? undefined,
     currentUserId: userId,
     currentUserRole: role,
     activeItemId: session.activeQueueItemId,
@@ -1633,4 +1646,14 @@ export async function deletePokerSession(
 ): Promise<void> {
   await requireFacilitator(sessionId, userId);
   await db.delete(pokerSessions).where(eq(pokerSessions.id, sessionId));
+}
+
+export async function getSessionInviteDetails(sessionId: string, userId: string) {
+  const { session } = await requireFacilitator(sessionId, userId);
+  const items = await db.select({ id: queueItems.id }).from(queueItems).where(eq(queueItems.sessionId, sessionId));
+  return { code: session.code, title: session.title, teamName: session.teamName, issueCount: items.length };
+}
+
+export async function recordSlackInviteOutcome(sessionId: string, userId: string, success: boolean) {
+  await audit(sessionId, userId, success ? "invite.slack_sent" : "invite.slack_failed");
 }

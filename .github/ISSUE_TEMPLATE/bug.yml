@@ -1,0 +1,27 @@
+name: Bug report
+description: Something did not work during a pointing session.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "This is public. Do not include private ticket content, credentials, session cookies, or workspace details. For vulnerabilities use the Security tab."
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+  - type: input
+    id: reference
+    attributes:
+      label: Error reference (if shown)

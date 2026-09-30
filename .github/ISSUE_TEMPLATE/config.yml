@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/jcb79107/linear-pointing/security/advisories/new
+    about: Report vulnerabilities privately; never include them in public issues.
+  - name: Getting started and troubleshooting
+    url: https://public-linear-pointing.vercel.app/support
+    about: Session setup, missing tickets, permissions, and data deletion.

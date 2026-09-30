@@ -1,0 +1,23 @@
+{
+  "scope": "Single local Chromium samples of production /demo. No throttling. Not field CWV; INP not measured.",
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "lcpMs": 48,
+      "cls": 0,
+      "domContentLoadedMs": 40.70000000298023
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "lcpMs": 40,
+      "cls": 0,
+      "domContentLoadedMs": 34.5
+    }
+  ]
+}
