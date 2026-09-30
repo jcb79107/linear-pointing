@@ -1,6 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
+import { FeedbackButton } from "@/components/FeedbackButton";
+
 import type Pusher from "pusher-js";
 import {
   ArrowLeft,
@@ -1068,6 +1070,7 @@ export function LiveRoom({
           />
         </div>
         <div className="room-actions">
+          <FeedbackButton compact />
           <button
             aria-expanded={shortcutsOpen}
             aria-label="Keyboard shortcuts"

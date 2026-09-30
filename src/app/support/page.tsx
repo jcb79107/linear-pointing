@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { FeedbackButton } from "@/components/FeedbackButton";
 import { Brand } from "@/components/Brand";
 export const metadata: Metadata = { title: "Help", description: "Get started with Pointed and resolve common session problems." };
 export default async function SupportPage({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
@@ -12,7 +13,7 @@ export default async function SupportPage({ searchParams }: { searchParams: Prom
     <h2>A teammate cannot join</h2><p>They need access to the same Linear workspace and team. Check which workspace they authorized, then reopen the invitation. Do not share credentials or session cookies.</p>
     <h2>Saving or connecting failed</h2><p>Keep the room open, check your connection, and retry after reading the error. Enable estimate saving in Settings if your connection is read-only. If an estimate changed in Linear, review the conflict before choosing whether to overwrite it. Refreshing the room recovers server-saved session state.</p>
     <h2>Disconnect or delete data</h2><p>Manage Slack and delete your Pointed account in <Link href="/app/account">Settings</Link>. Revoke Pointed in Linear’s integrations to remove provider authorization. Read the <Link href="/privacy">data and retention details</Link> before deleting a session or account.</p>
-    <h2>Report a problem</h2><p><a href="https://github.com/jcb79107/linear-pointing/issues/new/choose">Open a GitHub issue</a> with the steps, browser, expected result, and any error reference. This is public: remove private ticket content and credentials. Use <a href="https://github.com/jcb79107/linear-pointing/security/advisories/new">private reporting</a> for security or privacy vulnerabilities. Support is handled by the maintainer; there is no guaranteed response time.</p>
+    <h2>Report a problem</h2><p>Found something confusing or broken? Send a private message to the maintainer. Please leave out ticket content and credentials.</p><FeedbackButton /><p><a href="https://github.com/jcb79107/pointed/issues/new/choose">Open a GitHub issue</a> with the steps, browser, expected result, and any error reference. This is public: remove private ticket content and credentials. Use <a href="https://github.com/jcb79107/pointed/security/advisories/new">private reporting</a> for security or privacy vulnerabilities. Support is handled by the maintainer; there is no guaranteed response time.</p>
     <Link href="/">Back to Pointed</Link>
   </article></main>;
 }

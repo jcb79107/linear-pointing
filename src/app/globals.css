@@ -8673,3 +8673,7 @@ h3,
 .landing-facilitator { color: #59606c; }
 .information-page article a { color: #4b56b8; }
 :root[data-theme="dark"] .information-page article a { color: #a6b0ff; }
+
+.feedback-control { position: relative; display: inline-flex; align-items: center; }
+.feedback-control > button { min-width: 36px; min-height: 36px; }
+.feedback-fallback { position: absolute; z-index: 50; top: calc(100% + 8px); right: 0; width: 230px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font-size: 13px; box-shadow: 0 4px 16px #0002; }

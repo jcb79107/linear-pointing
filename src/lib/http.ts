@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/nextjs";
 import { ZodError } from "zod";
 
 export function apiError(error: unknown): Response {
@@ -26,6 +27,7 @@ export function apiError(error: unknown): Response {
     );
   }
   const reference = crypto.randomUUID();
+  captureException(error, { tags: { reference } });
   // Provider errors may embed SQL, ticket content, or credentials. Log only a
   // correlation ID; never forward raw exception text to clients or shared logs.
   console.error(JSON.stringify({ event: "api_error", reference }));
