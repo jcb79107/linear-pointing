@@ -15,12 +15,14 @@ Production probes passed for `/`, `/demo`, `/privacy`, `/support`, and `/api/hea
 
 ## Publication
 
-The GitHub CLI credential expired, and Git push has no usable credential. GitHub connector publishing repeatedly timed out during approval review of file uploads. Some unattached Git objects were uploaded, but the branch reference was not moved; PR #4 still points at the older revision. The complete release remains committed locally. The public repository description has been updated to Pointed. Scheduled monitoring and expanded CI are not active on main. They activate after the complete snapshot is published, remote CI passes, and PR #4 is merged. Upload progress is preserved locally in `.git/pointed-publish-state.json`.
+GitHub authentication and explicitly approved workflow permission were restored on September 30. The complete local release is published in PR #4. Main now requires a pull request and the trusted GitHub Actions `verify` check, with force pushes/deletions blocked. CI includes the 123 tests, types/lint, dependency audit, production build, and Chromium/WebKit browser suite. Scheduled health checks activate on merge to main.
 
-Anonymous `/api/sessions` and `DELETE /api/account` requests returned 401. The account page emitted a streamed authentication redirect with no account controls.
+The first Linux run failed clean installation because optional `@emnapi` entries were missing from the lockfile. Regenerating with npm 10.9.9 fixed clean-install validation; the repaired revision is subject to the full required CI run before merge. Current checks and deployment status are linked from PR #4.
 
-The proposed main-branch rule reached GitHub’s fresh-account confirmation screen and was not saved. Complete that confirmation before treating branch protection as active.
+Anonymous `/api/sessions` and `DELETE /api/account` returned 401. The account page emitted an authentication redirect without account controls.
+
+An isolated historical recovery drill passed on September 30; see [restore evidence](RESTORE-DRILL.md). Production still passed all public/health probes afterwards.
 
 ## Remaining gates
 
-See [readiness](READINESS.md): disposable two-account / two-workspace provider exercise, Neon administrative reauthentication and isolated restore drill, notification delivery, and 2–3-team pilot. No employer tickets were changed during validation.
+See [readiness](READINESS.md): disposable two-account / two-workspace provider exercise, a suitable history-retention window and populated-session recovery verification, notification delivery, and 2–3-team pilot. No employer tickets were changed during validation.

@@ -19,7 +19,7 @@ Public help and privacy pages; transactional, authenticated account deletion; sa
 
 ## Repository publication
 
-The complete release is now published to PR #4 after refreshing GitHub CLI authentication and explicitly approving workflow permission. Remote CI is being verified before merge. The first Linux CI run exposed missing optional runtime entries in the npm lockfile; those were regenerated with CI’s npm version. Monitoring activates after merge to main.
+The complete release is published in [PR #4](https://github.com/jcb79107/linear-pointing/pull/4). Main is protected: pull requests, up-to-date branches, the GitHub Actions `verify` check, and resolved review conversations are required; force pushes and deletion are blocked, including for administrators. Expanded CI runs on pull requests and main. The health schedule activates once merged to main. The first Linux run exposed missing optional runtime entries; the lockfile was repaired with CI’s npm version and clean-install validation passed.
 
 ## Required before broad promotion
 
@@ -27,8 +27,6 @@ The complete release is now published to PR #4 after refreshing GitHub CLI authe
 2. Historical recovery was verified in an isolated branch: see [restore drill](RESTORE-DRILL.md). Retention is only 6 hours. Choose a longer recovery window before relying on this for broader use, and repeat with populated disposable sessions; the current database has none.
 3. Run the small pilot with 2–3 real teams and observe a complete session. Collect failures and task friction, not just preferences. No pilot evidence is claimed.
 4. Confirm failure notifications reach the maintainer. Health checks cover availability, not every application error. Measure actual traffic before claiming Core Web Vitals targets.
-
-5. Finish GitHub account confirmation and save the prepared main-branch rule (pull requests, required `verify`, up-to-date branches, no force pushes/deletion). GitHub requested fresh account confirmation, so the rule is not yet active.
 
 ## Release operations
 
