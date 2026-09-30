@@ -17,9 +17,9 @@ These are synthetic/isolated tests, not proof of live provider writeback, multi-
 
 Public help and privacy pages; transactional, authenticated account deletion; same-origin logout; generic unexpected API errors with references; database health endpoint; CI with browser checks and dependency audit; scheduled production probes; contribution/security guidance; issue templates and dependency update automation. Monitoring schedules activate when merged to the default branch. Notification delivery remains unverified.
 
-## Publication blocker
+## Repository publication
 
-The verified app is deployed, but GitHub branch publication is incomplete: CLI authentication is expired and connector file uploads repeatedly timed out in automatic approval review. The full release is committed locally. PR #4 remains draft on its older head; expanded CI and scheduled monitoring are not active on main. Resume publishing before merging or tagging a release.
+The complete release is now published to PR #4 after refreshing GitHub CLI authentication and explicitly approving workflow permission. Remote CI is being verified before merge. The first Linux CI run exposed missing optional runtime entries in the npm lockfile; those were regenerated with CI’s npm version. Monitoring activates after merge to main.
 
 ## Required before broad promotion
 
