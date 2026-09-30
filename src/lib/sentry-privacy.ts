@@ -35,8 +35,10 @@ function sourceFile(value: string | undefined): string | undefined {
 export function sanitizeSentryEvent(event: ErrorEvent, hint?: EventHint): ErrorEvent | null;
 export function sanitizeSentryEvent(event: Event, hint?: EventHint): Event | null;
 export function sanitizeSentryEvent(event: Event, hint?: EventHint): Event | null {
-  if (hint) hint.attachments = [];
-  if (event.type && event.type !== "feedback") return null;
+  if (hint) hint.attachments = event.type === "feedback"
+    ? hint.attachments?.filter((attachment) => ["image/png", "image/jpeg", "image/webp"].includes(attachment.contentType ?? "")).slice(0, 1)
+    : [];
+  if (event.type && !["feedback", "replay_event"].includes(event.type)) return null;
   const clean: Event = {
     event_id: event.event_id,
     timestamp: event.timestamp,
@@ -45,9 +47,16 @@ export function sanitizeSentryEvent(event: Event, hint?: EventHint): Event | nul
     release: event.release,
     environment: event.environment,
     type: event.type,
-    // Explicit null prevents Sentry ingestion from inferring location from the sender IP.
+    // Project IP scrubbing and the $user.geo.** rule also remove inferred location.
     user: { ip_address: null },
   };
+  if (event.type === "replay_event") {
+    const replay = event as Event & { replay_id?: string; replay_type?: string; segment_id?: number; replay_start_timestamp?: number; urls?: string[] };
+    const result = { ...clean, replay_id: replay.replay_id, replay_type: replay.replay_type,
+      segment_id: replay.segment_id, replay_start_timestamp: replay.replay_start_timestamp,
+      urls: replay.urls?.map(telemetryPage), error_ids: [], trace_ids: [], segment_names: [] };
+    return result;
+  }
   if (event.type === "feedback") {
     const feedback = event.contexts?.feedback;
     if (!feedback || typeof feedback.message !== "string") return null;
@@ -56,6 +65,7 @@ export function sanitizeSentryEvent(event: Event, hint?: EventHint): Event | nul
       message: feedback.message.slice(0, 5000),
       ...(typeof feedback.contact_email === "string" ? { contact_email: feedback.contact_email.slice(0, 254) } : {}),
       source: "pointed",
+      ...(typeof feedback.replay_id === "string" && /^[a-f0-9]{32}$/.test(feedback.replay_id) ? { replay_id: feedback.replay_id } : {}),
     } };
   } else {
     clean.exception = { values: event.exception?.values?.map((exception) => ({
