@@ -5011,14 +5011,18 @@ body {
 }
 
 @media (max-width: 700px) {
+  /* Let the document scroll on phones. A fixed viewport makes revealed
+     votes and facilitator controls consume the entire ticket pane. */
   .room-shell {
-    height: 100dvh;
+    height: auto;
     min-height: 100dvh;
+    overflow: visible;
   }
 
   .room-header {
     height: 54px;
     grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 8px;
     padding: 0 10px;
   }
 
@@ -5064,18 +5068,21 @@ body {
 
   .room-grid {
     display: flex;
-    height: calc(100dvh - 54px);
+    height: auto;
+    flex: 1 0 auto;
     flex-direction: column;
   }
 
   .room-issue {
     min-height: 0;
-    flex: 1;
+    flex: 1 0 auto;
   }
 
   .issue-scroll {
     min-height: 0;
-    padding: 17px 16px 14px;
+    flex: 1 0 auto;
+    overflow: visible;
+    padding: 17px 16px 24px;
   }
 
   .issue-meta-row {
@@ -5159,6 +5166,7 @@ body {
 
   .vote-dock-head {
     align-items: flex-start;
+    flex-wrap: wrap;
     gap: 6px;
   }
 
@@ -8625,9 +8633,9 @@ h3,
 .summary-item > a em { font-size: 12px; font-style: normal; }
 .summary-item > button { min-height: 44px; margin-bottom: 8px; text-decoration: underline; font-size: 13px; }
 @media (max-width: 1180px) {
-  .mobile-agenda-nav { display: block; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
-  .mobile-agenda-nav label { display: flex; align-items: center; gap: 12px; font-size: 12px; }
-  .mobile-agenda-nav select { min-width: 0; flex: 1; width: 0; }
+  .mobile-agenda-nav { display: block; overflow: hidden; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  .mobile-agenda-nav label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; font-size: 12px; }
+  .mobile-agenda-nav select { display: block; min-width: 0; width: 100%; max-width: 100%; min-height: 44px; }
 }
 @media (max-width: 700px) {
   .team-default-fields { grid-template-columns: 1fr; gap: 16px; }
@@ -8640,7 +8648,7 @@ h3,
   .cycle-share .button { flex: 1 1 auto; }
   .demo-notice { font-size: 11px; padding: 6px 12px; }
   .demo-notice nav a { min-height: 44px; }
-  .mobile-revealed-votes { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; max-height: 112px; overflow-y: auto; }
+  .mobile-revealed-votes { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; max-height: none; }
   .mobile-revealed-votes > span { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; background: var(--panel); }
   .mobile-revealed-votes b { font-size: 12px; font-weight: 500; }
   .mobile-revealed-votes strong { font-size: 15px; }
@@ -8690,3 +8698,9 @@ h3,
 
 .feedback-dialog .button-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
 .feedback-dialog .button-primary:hover:not(:disabled) { background: var(--blue-hover); }
+
+/* Keep the split desktop layout usable in short landscape windows. */
+@media (min-width: 701px) and (max-height: 600px) {
+  .room-shell { height: auto; min-height: 100dvh; overflow: visible; }
+  .room-grid { flex: 1 0 auto; min-height: 540px; }
+}

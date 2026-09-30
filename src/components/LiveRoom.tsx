@@ -356,6 +356,20 @@ export function LiveRoom({
     (item) => item.id === snapshot.activeItemId,
   );
   const viewedItem = (browsingId && previewItem?.id === browsingId ? previewItem : snapshot.queue.find(item => item.id === browsingId)) ?? activeItem;
+  const issuePaneRef = useRef<HTMLElement>(null);
+  const viewedItemId = viewedItem?.id;
+  const previousViewedItemId = useRef(viewedItemId);
+  useEffect(() => {
+    if (previousViewedItemId.current === viewedItemId) return;
+    previousViewedItemId.current = viewedItemId;
+    // A new ticket must start at its title, including when the facilitator
+    // advances from controls below the ticket on a scrolling phone layout.
+    const pane = issuePaneRef.current;
+    pane?.querySelector(".issue-scroll")?.scrollTo({ top: 0, behavior: "instant" });
+    if (window.matchMedia("(max-width: 700px), (max-height: 600px)").matches) {
+      pane?.scrollIntoView({ block: "start", behavior: "instant" });
+    }
+  }, [viewedItemId]);
   const browsing = Boolean(viewedItem && viewedItem.id !== activeItem?.id);
   const me = snapshot.participants.find(
     (person) => person.id === snapshot.currentUserId,
@@ -1406,7 +1420,7 @@ export function LiveRoom({
           </div>
         </aside>
 
-        <section className="room-issue">
+        <section className="room-issue" ref={issuePaneRef}>
           {browsing && <div className="browse-notice" role="status"><span>Previewing {viewedItem?.identifier}. The team is on {activeItem?.identifier ?? "the summary"}.</span><button type="button" onClick={() => setBrowsingId(null)}>Return to current ticket</button></div>}
           {viewedItem ? (
             <>
