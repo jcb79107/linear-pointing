@@ -43,6 +43,11 @@ await copyFile(
   path.join(root, "tests/fixtures/page.tsx"),
   path.join(dir, "src/app/page.tsx"),
 );
+await mkdir(path.join(dir, "src/app/api/fixture-snapshot"), { recursive: true });
+await writeFile(
+  path.join(dir, "src/app/api/fixture-snapshot/route.ts"),
+  'import { demoSnapshot } from "@/fixture";\nexport function GET() { return Response.json({ snapshot: demoSnapshot }); }\n',
+);
 const child = spawn(
   path.join(root, "node_modules/.bin/next"),
   ["dev", "--webpack", "--port", "3005", "--hostname", "127.0.0.1"],

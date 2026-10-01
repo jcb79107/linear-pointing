@@ -51,9 +51,5 @@ export function authorizePresenceChannel(
   if (!client) throw new Error("Realtime is not configured");
   return client.authorizeChannel(socketId, channelName, {
     user_id: user.id,
-    user_info: {
-      name: user.displayName,
-      avatarUrl: user.avatarUrl,
-    },
   });
 }

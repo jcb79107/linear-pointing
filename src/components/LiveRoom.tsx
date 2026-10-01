@@ -42,6 +42,7 @@ import { Brand, PointedMark } from "@/components/Brand";
 import { SlackInviteButton } from "@/components/SlackInviteButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { requestJson } from "@/lib/client-request";
+import { LINEAR_ACCESS_UNAVAILABLE } from "@/lib/access-errors";
 import type {
   GroomingOutcome,
   LinearIssueSummary,
@@ -58,6 +59,7 @@ import {
   isFigmaUrl,
 } from "@/lib/figma";
 import { roundedUpAverageVote } from "@/lib/rounds";
+import { shouldClearRoom } from "@/lib/room-access";
 import { accumulatedElapsedSeconds } from "@/lib/timing";
 
 interface LiveRoomProps {
@@ -68,6 +70,7 @@ interface LiveRoomProps {
 
 interface RoomApiResponse {
   error?: string;
+  code?: string;
   snapshot?: SessionSnapshot;
 }
 
@@ -160,11 +163,60 @@ function localRound(
   };
 }
 
-export function LiveRoom({
+export function LiveRoom(props: LiveRoomProps) {
+  const [accessEnded, setAccessEnded] = useState(false);
+  const onAccessDenied = useCallback(() => setAccessEnded(true), []);
+  const accessTitle = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (accessEnded) accessTitle.current?.focus();
+  }, [accessEnded]);
+
+  if (accessEnded) {
+    return (
+      <main className="auth-shell">
+        <section className="join-card" aria-labelledby="room-access-title">
+          <Brand />
+          <div role="alert">
+            <h1 id="room-access-title" ref={accessTitle} tabIndex={-1}>Room access ended</h1>
+            <p>Your sign-in or Linear team access changed. The room has been cleared from this screen.</p>
+          </div>
+          <a className="button button-primary" href={`/sessions/${props.initialSnapshot.id}`}>
+            Check access again
+          </a>
+          <Link className="button" href="/app">Back to sessions</Link>
+        </section>
+      </main>
+    );
+  }
+
+  return <LiveRoomContent {...props} onAccessDenied={onAccessDenied} />;
+}
+
+function LiveRoomContent({
   initialSnapshot,
   demoMode = false,
-}: LiveRoomProps) {
+  onAccessDenied,
+}: LiveRoomProps & { onAccessDenied: () => void }) {
   const router = useRouter();
+  const accessEnded = useRef(false);
+  const checkRoomAccess = useCallback((response: Response, data: unknown) => {
+    if (shouldClearRoom(response.status, data)) {
+      accessEnded.current = true;
+      onAccessDenied();
+    }
+    // Do not let a late successful request restore data after confirmed denial.
+    if (accessEnded.current) throw new Error("Room access ended");
+  }, [onAccessDenied]);
+  const requestRoomJson = useCallback(async <T,>(
+    input: RequestInfo | URL,
+    init: RequestInit = {},
+    timeoutMs?: number,
+  ) => {
+    if (accessEnded.current) throw new Error("Room access ended");
+    const result = await requestJson<T>(input, init, timeoutMs);
+    checkRoomAccess(result.response, result.data);
+    return result;
+  }, [checkRoomAccess]);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [busy, setBusy] = useState(false);
   const [browsingId, setBrowsingId] = useState<string | null>(null);
@@ -175,7 +227,7 @@ export function LiveRoom({
   const [error, setError] = useState<string | null>(null);
   const [previewNotice, setPreviewNotice] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<
-    "connected" | "reconnecting" | "offline"
+    "connected" | "reconnecting" | "offline" | "access-unavailable"
   >("connected");
   const [copied, setCopied] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -210,10 +262,10 @@ export function LiveRoom({
     if (!browsingId || demoMode) return;
     const controller = new AbortController();
     fetch(`/api/sessions/${initialSnapshot.id}/preview?itemId=${encodeURIComponent(browsingId)}`, { signal: controller.signal })
-      .then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "Could not refresh preview"); if (!controller.signal.aborted) setPreviewItem(data.item); })
+      .then(async response => { const data = await response.json(); checkRoomAccess(response, data); if (!response.ok) throw new Error(data.error ?? "Could not refresh preview"); if (!controller.signal.aborted) setPreviewItem(data.item); })
       .catch(error => { if (!controller.signal.aborted) setPreviewNotice(`${error.message}. Showing the saved ticket preview.`); });
     return () => controller.abort();
-  }, [browsingId, demoMode, initialSnapshot.id]);
+  }, [browsingId, checkRoomAccess, demoMode, initialSnapshot.id]);
 
   const refreshInFlight = useRef<Promise<boolean> | null>(null);
   const addIssueDialogRef = useRef<HTMLElement>(null);
@@ -230,11 +282,15 @@ export function LiveRoom({
 
     const request = (async () => {
       try {
-        const { data, response } = await requestJson<RoomApiResponse>(
+        const { data, response } = await requestRoomJson<RoomApiResponse>(
           `/api/sessions/${initialSnapshot.id}/snapshot`,
           { cache: "no-store" },
           8_000,
         );
+        if (response.status === 503 && data.code === LINEAR_ACCESS_UNAVAILABLE) {
+          setSyncState("access-unavailable");
+          return false;
+        }
         if (!response.ok || !data.snapshot) {
           throw new Error(data.error ?? "Could not refresh the room");
         }
@@ -250,7 +306,7 @@ export function LiveRoom({
     })();
     refreshInFlight.current = request;
     return request;
-  }, [demoMode, initialSnapshot.id]);
+  }, [demoMode, initialSnapshot.id, requestRoomJson]);
 
   useEffect(() => {
     if (demoMode) return;
@@ -463,7 +519,7 @@ export function LiveRoom({
       optimisticVote(current, current.currentUserId, value),
     );
     try {
-      const { data, response } = await requestJson<RoomApiResponse>(
+      const { data, response } = await requestRoomJson<RoomApiResponse>(
         `/api/sessions/${snapshot.id}/vote`,
         {
           method: "POST",
@@ -775,7 +831,7 @@ export function LiveRoom({
     try {
       const shouldOverwrite = overwrite;
       while (true) {
-        const { data, response } = await requestJson<RoomApiResponse>(
+        const { data, response } = await requestRoomJson<RoomApiResponse>(
           `/api/sessions/${snapshot.id}/actions`,
           {
             method: "POST",
@@ -827,7 +883,7 @@ export function LiveRoom({
     setError(null);
     setPreviewNotice(null);
     try {
-      const { data, response } = await requestJson<RoomApiResponse>(
+      const { data, response } = await requestRoomJson<RoomApiResponse>(
         `/api/sessions/${snapshot.id}/actions`,
         {
           method: "POST",
@@ -871,7 +927,7 @@ export function LiveRoom({
     setBusy(true);
     setError(null);
     try {
-      const { data, response } = await requestJson<{ error?: string }>(
+      const { data, response } = await requestRoomJson<{ error?: string }>(
         `/api/sessions/${snapshot.id}`,
         { method: "DELETE" },
       );
@@ -908,6 +964,7 @@ export function LiveRoom({
       });
       const response = await fetch(`/api/linear/issues?${params}`);
       const data = await response.json();
+      checkRoomAccess(response, data);
       if (!response.ok) throw new Error(data.error);
       const queuedIds = new Set(
         snapshot.queue.map((item) => item.linearIssueId),
@@ -949,6 +1006,7 @@ export function LiveRoom({
         }),
       });
       const data = await response.json();
+      checkRoomAccess(response, data);
       if (!response.ok) throw new Error(data.error);
       setAddIssueOpen(false);
       await refresh();
@@ -971,6 +1029,7 @@ export function LiveRoom({
       );
       if (!response.ok) {
         const data = await response.json();
+        checkRoomAccess(response, data);
         throw new Error(data.error);
       }
       await refresh();
@@ -1172,7 +1231,9 @@ export function LiveRoom({
           <span>
             {syncState === "offline"
               ? "You’re offline. The room will catch up automatically."
-              : "Reconnecting to the room…"}
+              : syncState === "access-unavailable"
+                ? "Linear access is temporarily unavailable. Showing the last saved room while we retry."
+                : "Reconnecting to the room…"}
           </span>
           <button onClick={() => void refresh()} type="button">
             Retry now
