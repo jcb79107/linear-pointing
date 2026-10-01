@@ -1,7 +1,26 @@
 import { captureException } from "@sentry/nextjs";
 import { ZodError } from "zod";
 
+import {
+  LINEAR_ACCESS_UNAVAILABLE,
+  ROOM_ACCESS_DENIED,
+  LinearAccessUnavailableError,
+  RoomAccessDeniedError,
+} from "@/lib/access-errors";
+
 export function apiError(error: unknown): Response {
+  if (error instanceof RoomAccessDeniedError) {
+    return Response.json(
+      { error: "You no longer have access to this room.", code: ROOM_ACCESS_DENIED },
+      { status: 403 },
+    );
+  }
+  if (error instanceof LinearAccessUnavailableError) {
+    return Response.json(
+      { error: "Unable to verify Linear access. Try again.", code: LINEAR_ACCESS_UNAVAILABLE },
+      { status: 503 },
+    );
+  }
   if (error instanceof ZodError) {
     return Response.json(
       { error: "Invalid request", details: error.flatten() },

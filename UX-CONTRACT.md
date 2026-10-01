@@ -3,6 +3,7 @@
 - Select/Listbox: native HTML selects own keyboard, mobile picker, and popup behavior. Labels are explicit. TeamDefaultFields owns the four reusable workflow inputs.
 - Forms: application validation uses Zod on the server and explicit client feedback. Busy controls prevent repeat submissions. Errors preserve input and use role=alert.
 - Feedback: inline role=status for save/order feedback; errors use role=alert. Saved-to-Linear feedback is shown only after confirmed server success.
+- Room access: LiveRoom clears the protected screen, closes its dialogs, stops polling, and disconnects its own realtime client on confirmed room-access denial or expired sign-in. It keeps the last saved screen during a temporary access-check outage with reconnecting feedback. Role-only action denial does not clear an otherwise accessible room. Server authorization remains authoritative; this does not erase previously downloaded data or force third-party clients offline.
 - Dialogs: ConfirmDialog owns focus trapping, Escape, return focus, cancel, and destructive confirmation. Estimate conflict confirmation uses its primary variant.
 - Reordering: DndKit pointer and keyboard sensors plus Move up/down buttons. Server validates the complete queue membership before saving.
 - Theme and typography: DESIGN.md maps to src/app/globals.css tokens. Native select geometry is intentionally platform-owned. Appearance is personal and automatically saved; team defaults require explicit save.

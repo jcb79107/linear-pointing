@@ -16,6 +16,7 @@ import * as schema from "@/db/schema";
 import type { LinearIssueSummary, SessionIntake } from "./domain";
 import { DEFAULT_TEAM_DEFAULTS, teamDefaultsSchema } from "./team-defaults";
 import { resolveCycleOffset } from "./linear-order";
+import { RoomAccessDeniedError } from "./access-errors";
 const mocks = vi.hoisted(() => ({
   db: undefined as PgliteDatabase<typeof schema> | undefined,
   access: vi.fn(),
@@ -238,7 +239,7 @@ describe("shared defaults and draft persistence", () => {
     );
     await expect(
       loadSessionAgenda(session.id, outsider.id, DEFAULT_TEAM_DEFAULTS),
-    ).rejects.toThrow("FORBIDDEN");
+    ).rejects.toThrow(RoomAccessDeniedError);
     await db()
       .insert(schema.participants)
       .values({

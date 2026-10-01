@@ -6,7 +6,7 @@ import { pokerSessions } from "@/db/schema";
 import { requireCurrentUser } from "@/lib/auth";
 import { apiError, assertSameOrigin } from "@/lib/http";
 import { authorizePresenceChannel } from "@/lib/realtime";
-import { userCanJoinRealtimeChannel } from "@/lib/sessions";
+import { requireRealtimeChannelAccess } from "@/lib/sessions";
 
 const inputSchema = z.object({
   socket_id: z.string().min(1),
@@ -22,9 +22,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const input = inputSchema.parse(Object.fromEntries(formData));
     const sessionId = input.channel_name.replace("presence-session-", "");
-    if (!(await userCanJoinRealtimeChannel(sessionId, user.id))) {
-      throw new Error("FORBIDDEN");
-    }
+    await requireRealtimeChannelAccess(sessionId, user.id);
     const [session] = await db
       .select({ id: pokerSessions.id })
       .from(pokerSessions)

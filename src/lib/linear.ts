@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { linearConnections } from "@/db/schema";
+import { LinearAccessUnavailableError } from "@/lib/access-errors";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import type {
   EstimateScaleType,
@@ -63,6 +64,75 @@ export interface LinearCustomViewSummary {
   teamId: string | null;
 }
 
+// An internal provider result, distinct from a room's HTTP authorization error.
+// Never retain a raw response/message that may contain tokens or query details.
+class LinearAuthorizationDeniedError extends Error {
+  constructor() {
+    super("Linear authorization denied");
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object"
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function isConfirmedLinearDenial(error: unknown): boolean {
+  if (error instanceof LinearAuthorizationDeniedError) return true;
+  const source = record(error);
+  const response = record(source?.response);
+  const status = source?.status ?? response?.status;
+  // Outages, rate limits, and timeouts never prove loss of authorization.
+  if (status === 408 || status === 429 || (typeof status === "number" && status >= 500)) {
+    return false;
+  }
+  const errors = source?.errors ?? response?.errors;
+  const types = Array.isArray(errors)
+    ? errors.map((item) => {
+        const detail = record(item);
+        return detail?.type ?? record(detail?.extensions)?.type;
+      })
+    : [];
+  const uncertainTypes = [
+    "Ratelimited", "NetworkError", "InternalError", "LockTimeout", "UsageLimitExceeded",
+    "ratelimited", "network error", "internal error", "lock timeout", "usage limit exceeded",
+  ];
+  if ([source?.type, ...types].some((type) => uncertainTypes.includes(String(type)))) {
+    return false;
+  }
+  if (status === 401 || status === 403) return true;
+  const deniedTypes = ["AuthenticationError", "Forbidden", "authentication error", "forbidden"];
+  if (types.some((type) => deniedTypes.includes(String(type)))) return true;
+  // The SDK labels *all* otherwise-unclassified 4xx as AuthenticationError.
+  // Trust that top-level type only without a contradictory HTTP status; a bare
+  // 400/404 is not enough evidence to discard a user's still-authorized room.
+  return (status === undefined || status === 200)
+    && deniedTypes.includes(String(source?.type));
+}
+
+async function tokenRefreshFailure(response: Response): Promise<Error> {
+  if (response.status === 408 || response.status === 429 || response.status >= 500) {
+    return new LinearAccessUnavailableError();
+  }
+  // Inspect only the stable OAuth error code, never error_description or the
+  // raw body. Client configuration errors do not establish user access loss,
+  // including when the token endpoint returns them with an HTTP 401/403.
+  const body = await response.json().catch(() => null);
+  const code = record(body)?.error;
+  if (code === "invalid_client" || code === "unauthorized_client") {
+    return new LinearAccessUnavailableError();
+  }
+  if (response.status === 401 || response.status === 403) {
+    return new LinearAuthorizationDeniedError();
+  }
+  if (response.status === 400
+    && ["invalid_grant", "invalid_token", "access_denied"].includes(String(code))) {
+    return new LinearAuthorizationDeniedError();
+  }
+  return new LinearAccessUnavailableError();
+}
+
 function parseScopes(value: string | string[]): string[] {
   return Array.isArray(value)
     ? value
@@ -79,7 +149,7 @@ export async function getLinearAccessToken(userId: string): Promise<{
     .where(eq(linearConnections.userId, userId))
     .limit(1);
 
-  if (!connection) throw new Error("Linear connection not found");
+  if (!connection) throw new LinearAuthorizationDeniedError();
   if (connection.expiresAt.getTime() > Date.now() + 5 * 60_000) {
     return {
       accessToken: decryptSecret(connection.encryptedAccessToken),
@@ -100,7 +170,7 @@ export async function getLinearAccessToken(userId: string): Promise<{
   });
 
   if (!response.ok) {
-    throw new Error(`Linear token refresh failed (${response.status})`);
+    throw await tokenRefreshFailure(response);
   }
 
   const tokens = (await response.json()) as LinearTokenResponse;
@@ -525,8 +595,9 @@ export async function userHasTeamAccess(
   try {
     const team = await getLinearTeam(userId, teamId);
     return team.id === teamId;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isConfirmedLinearDenial(error)) return false;
+    throw new LinearAccessUnavailableError();
   }
 }
 

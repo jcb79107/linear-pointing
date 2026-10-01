@@ -36,6 +36,7 @@ import type {
   TeamDefaults,
 } from "@/lib/domain";
 import { isFinalizableEstimate } from "@/lib/estimates";
+import { LinearAccessUnavailableError, RoomAccessDeniedError } from "@/lib/access-errors";
 import {
   getLinearIssue,
   updateLinearIssueEstimate,
@@ -631,7 +632,13 @@ async function requireMembership(sessionId: string, userId: string) {
     )
     .where(eq(pokerSessions.id, sessionId))
     .limit(1);
-  if (!row) throw new Error("FORBIDDEN");
+  if (!row) throw new RoomAccessDeniedError();
+  // Denial and uncertainty both stop protected operations. Only confirmed
+  // denial tells the client to discard room data; outages remain retryable.
+  const hasTeamAccess = await userHasTeamAccess(userId, row.session.teamId).catch(() => {
+    throw new LinearAccessUnavailableError();
+  });
+  if (!hasTeamAccess) throw new RoomAccessDeniedError();
   return row;
 }
 
@@ -1628,12 +1635,19 @@ export async function finalizeEstimate(input: {
   }
 }
 
+export async function requireRealtimeChannelAccess(
+  sessionId: string,
+  userId: string,
+): Promise<void> {
+  await requireMembership(sessionId, userId);
+}
+
 export async function userCanJoinRealtimeChannel(
   sessionId: string,
   userId: string,
 ): Promise<boolean> {
   try {
-    await requireMembership(sessionId, userId);
+    await requireRealtimeChannelAccess(sessionId, userId);
     return true;
   } catch {
     return false;
